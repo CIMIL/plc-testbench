@@ -6,15 +6,9 @@ import os
 import math
 
 import numpy as np
+import onnxruntime as ort
 from numpy.fft import rfft
 from numpy.lib.stride_tricks import as_strided
-
-# TEMP
-# TODO REMOVE
-try:
-    import onnxruntime as ort
-except:
-    pass
 
 
 class PLCMOSEstimator:
@@ -168,9 +162,9 @@ class PLCMOSEstimator:
         """
         assert sr_degraded == 16000
         np.random.seed(23)
-        audio_features_degraded = np.float32(self.stft_transform(audio_degraded))[
-            np.newaxis, np.newaxis, ...
-        ]
+        audio_features_degraded = np.asarray(
+            self.stft_transform(audio_degraded), dtype=np.float32
+        )[np.newaxis, np.newaxis, ...]
         mos = 0
         intermediate_scores = {}
         for i in range(self.embed_rounds):
@@ -180,9 +174,9 @@ class PLCMOSEstimator:
                 assert (
                     session is not None
                 ), "Intrusive model not available for this model version."
-                audio_features_clean = np.float32(self.stft_transform(audio_clean))[
-                    np.newaxis, np.newaxis, ...
-                ]
+                audio_features_clean = np.asarray(
+                    self.stft_transform(audio_clean), dtype=np.float32
+                )[np.newaxis, np.newaxis, ...]
                 assert (
                     len(audio_features_clean) <= self.max_lens[0]
                 ), "Maximum input length exceeded"

@@ -347,8 +347,8 @@ PLCAlgorithm:
         values: null
       - name: model_path
         type: str
-        default: dl_models/model_bs256_100epochs_0.01_1e-3_1e-7
-        value: dl_models/model_bs256_100epochs_0.01_1e-3_1e-7
+        default: dl_models/model_bs256_100epochs_0.01_1e-3_1e-7.onnx
+        value: dl_models/model_bs256_100epochs_0.01_1e-3_1e-7.onnx
         values: null
       - name: fs_dl
         type: int
@@ -397,36 +397,44 @@ PLCAlgorithm:
           - custom
       - name: dl_model_path
         type: str
-        default: dl_models/parcnet-is2_mplc_challenge.pth
-        value: dl_models/parcnet-is2_mplc_challenge.pth
+        default: dl_models/parcnet-is2_mplc_challenge.onnx
+        value: dl_models/parcnet-is2_mplc_challenge.onnx
+        values: null
       - name: dl_fs
         type: int
         default: 44100
         value: 44100
+        values: null
       - name: extra_packet_dim
         type: int
         default: 256
         value: 256
+        values: null
       - name: ar_order
         type: int
         default: 256
         value: 256
+        values: null
       - name: ar_fade_dim
         type: int
         default: 8
         value: 8
+        values: null
       - name: ar_diagonal_load
         type: float
         default: 0.001
         value: 0.001
+        values: null
       - name: context_length_blocks
         type: int
         default: 8
         value: 8
+        values: null
       - name: nn_fade_dim
         type: int
         default: 64
         value: 64
+        values: null
 
 OutputAnalyser:
   - name: MSECalculator

@@ -243,6 +243,51 @@ If L/R or M/S channels require different PLC algorithms, the `channel_link` para
 
 Alternatively, if the same PLC algorithms need to be applied to both channels (regardless of the L/R or M/S coding), the `channel_link` parameter needs to be set to `True` and the related settings need to be specified in the `band_settings` parameter using the `linked` key.
 
+### Deep-learning models (ONNX)
+
+The deep-learning PLC algorithms (`VermaPLC` and `PARCnetPLC`) run on **ONNX Runtime** (CPU); TensorFlow and PyTorch are not required at runtime. The pre-trained models live in `dl_models/`:
+
+| Algorithm | Model | Notes |
+| --- | --- | --- |
+| `VermaPLC` | `model_bs256_100epochs_0.01_1e-3_1e-7.onnx` | Exported from the original Keras model with `tf2onnx`. Two inputs: `cnn_input`, the mel spectrogram `(1, 100, 200, 1)`, and `concat_input`, the last packet `(1, 128)`. |
+| `PARCnetPLC` | `parcnet-is2_mplc_challenge.onnx` | Exported from the original TorchScript checkpoint with `torch.onnx.export`. Single input: `nn_context` `(1, 1, 2560)`. |
+
+The models are pre-converted and committed, so no conversion step is needed to run the testbench (`PLCMOSEstimator` already used ONNX). The conversion itself was a one-off operation; no converter is shipped with the repository. It was performed in an isolated environment (TensorFlow 2.15 + `tf2onnx` for Verma, PyTorch for PARCnet):
+
+```python
+# Verma: from the original Keras model (legacy environments, Keras 2.x)
+import keras, tensorflow as tf, tf2onnx
+model = keras.models.load_model("dl_models/model_bs256_100epochs_0.01_1e-3_1e-7.h5")
+spec = [
+    tf.TensorSpec([None, 100, 200, 1], tf.float32, name="cnn_input"),
+    tf.TensorSpec([None, 128], tf.float32, name="concat_input"),
+]
+tf2onnx.convert.from_keras(
+    model, input_signature=spec,
+    output_path="dl_models/model_bs256_100epochs_0.01_1e-3_1e-7.onnx",
+)
+
+# PARCnet: from the original TorchScript checkpoint
+import torch
+module = torch.jit.load("dl_models/parcnet-is2_mplc_challenge.pth", map_location="cpu").eval()
+torch.onnx.export(
+    module, (torch.randn(1, 1, 2560),),
+    "dl_models/parcnet-is2_mplc_challenge.onnx",
+    input_names=["nn_context"], output_names=["nn_pred"],
+    opset_version=17, dynamo=False,
+)
+```
+
+`VermaPLC` expects the packet size used by its exported model (**128** samples) and a mel spectrogram of `(100, 200, 1)`. Changing `packet_size`, `fs_dl`, `context_length`, `hop_size`, `window_length` or `num_mel_bins` raises a descriptive error unless the model is re-exported accordingly.
+
+A basic smoke/parity script exercising both models is available:
+
+```bash
+python -m test.test_onnx_plc
+```
+
+It compares each ONNX model against golden outputs captured from the original frameworks (`test/fixtures/*.npz`) before they were removed, and runs both `VermaPLC` and `PARCnetPLC` end-to-end on synthetic audio.
+
 ## User Interface
 This user interface is an ongoing thesis project carried out by Stefano Dallona under the supervision of Luca Vignati.
 It is a web application developed using the React framework.

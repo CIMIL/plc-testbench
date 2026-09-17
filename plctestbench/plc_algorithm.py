@@ -7,23 +7,21 @@ import numpy as np
 try:
     from burg_plc import BurgBasic
 except ImportError:
-    logging.warn("Burg PLC unavailable")
+    BurgBasic = None
+    logging.warning("Burg PLC unavailable")
 try:
-    from cpp_plc_template import BasePlcTemplate
+    from cpp_plc_template import BasePlcTemplate  # type: ignore[import-not-found]
 except ImportError:
-    logging.warn("External PLC unavailable")
-try:
-    import tensorflow as tf
-except ImportError:
-    logging.warn("Deep learning features unavailable")
+    BasePlcTemplate = None
+    logging.warning("External PLC unavailable")
 from plctestbench.worker import Worker
 
 from .crossfade import Crossfade, MultibandCrossfade
 from .filters import LinkwitzRileyCrossover
 from .low_cost_concealment import LowCostConcealment
 from .parcnet import PARCnet
+from .verma import VermaNet
 from .settings import (
-    AdvancedPLCSettings,
     PARCnetPLCSettings,
     BurgPLCSettings,
     VermaPLCSettings,
@@ -59,7 +57,7 @@ class PLCAlgorithm(Worker):
             self.algorithm_context_length = int(
                 self.settings.get("context_length") * self.settings.get("fs") / 1000
             )
-        except:
+        except Exception:
             self.algorithm_context_length = self.packet_size
 
     def run(self, original_track: np.ndarray, lost_samples_idx: np.ndarray, id):
@@ -159,9 +157,6 @@ class PLCAlgorithm(Worker):
 class AdvancedPLC(PLCAlgorithm):
     """ """
 
-    def __init__(self, settings: AdvancedPLCSettings):
-        super().__init__(settings)
-
     def get_worker(self, worker_settings, settings):
         class_name = type(worker_settings).__name__.replace("Settings", "")
         worker_settings.set_progress_monitor(settings.get_progress_monitor())
@@ -169,7 +164,6 @@ class AdvancedPLC(PLCAlgorithm):
 
     def __init__(self, settings: Settings) -> None:
         Worker.__init__(self, settings)
-        self.plc_algorithms = []
         all_plc_settings = self.settings.get("settings")
         self.plc_algorithms = {
             channel: [
@@ -281,7 +275,7 @@ class LastPacketPLC(PLCAlgorithm):
         self.mirror_y = settings.get("mirror_y")
         self.clip_strategy = settings.get("clip_strategy")
 
-    def _predict(self, _: np.ndarray):
+    def _predict(self, buffer: np.ndarray):
         """ """
 
         def _flip_in_place(buffer: np.ndarray):
@@ -352,6 +346,8 @@ class BurgPLC(PLCAlgorithm):
         context_length_samples = round(
             self.algorithm_context_length / 1000 * self.settings.get("fs")
         )
+        if BurgBasic is None:
+            raise ImportError("Burg PLC is not available on this platform.")
         self.burg = BurgBasic(context_length_samples)
 
     def _predict(self, buffer: np.ndarray):
@@ -381,6 +377,8 @@ class ExternalPLC(PLCAlgorithm):
 
     def __init__(self, settings: ExternalPLCSettings) -> None:
         super().__init__(settings)
+        if BasePlcTemplate is None:
+            raise ImportError("External PLC is not available on this platform.")
         self.bpt = BasePlcTemplate()
         self.bpt.prepare_to_play(self.settings.get("fs"), self.packet_size)
 
@@ -400,7 +398,7 @@ class VermaPLC(PLCAlgorithm):
 
     def __init__(self, settings: VermaPLCSettings) -> None:
         super().__init__(settings)
-        self.model = tf.keras.models.load_model(settings.get("model_path"))
+        self.model = VermaNet(settings.get("model_path"))
         self.fs_dl = settings.get("fs_dl")
         self.context_length = settings.get("context_length")
         self.context_length_samples = settings.get("context_length_samples")
@@ -480,7 +478,6 @@ class PARCnetPLC(PLCAlgorithm):
             self.context_length_blocks,
             self.context_length_blocks,
             self.nn_fade_dim,
-            "cpu",
         )
 
     def _prepare_to_play(self):

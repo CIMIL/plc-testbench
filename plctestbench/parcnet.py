@@ -1,20 +1,9 @@
 import warnings
 
 import numpy as np
+import onnxruntime as ort
 import scipy
 from numba import njit
-
-
-from copy import deepcopy
-
-# TEMP
-# TODO REMOVE
-try:
-    import torch
-    import torch.nn as nn
-    import torch.nn.functional as F
-except:
-    print("eh ")
 
 
 @njit
@@ -134,13 +123,11 @@ class PARCnet:
         ar_context_dim: int,
         nn_context_dim: int,
         nn_fade_dim: int,
-        device: str,
     ):
 
         # Store arguments
         self.packet_dim = packet_dim
         self.extra_dim = extra_pred_dim
-        self.device = device
 
         # Define the prediction length, including the extra length
         self.pred_dim = packet_dim + extra_pred_dim
@@ -160,24 +147,41 @@ class PARCnet:
         # Instantiate the linear predictor
         self.ar_model = ARModel(ar_order, ar_diagonal_load)
 
-        self.neural_net = torch.jit.load(model_path).to(self.device)
+        self.session = ort.InferenceSession(
+            str(model_path), providers=["CPUExecutionProvider"]
+        )
+        inputs = self.session.get_inputs()
+        if len(inputs) != 1:
+            raise ValueError(
+                f"PARCnet model '{model_path}' must expose exactly 1 input, found {len(inputs)}."
+            )
+        self.nn_input_name = inputs[0].name
+        expected_nn_input = self.nn_context_dim + self.pred_dim
+        declared_nn_input = inputs[0].shape[-1]
+        if isinstance(declared_nn_input, int) and declared_nn_input != expected_nn_input:
+            raise ValueError(
+                f"PARCnet model '{model_path}' expects an input of length {declared_nn_input}, "
+                f"but the current settings (context_length_blocks, packet_dim, extra_pred_dim) "
+                f"require {expected_nn_input}. Align the settings with the exported model."
+            )
 
-    def __call__(self, context: np.ndarray, is_burst: bool) -> np.ndarray:
+    def __call__(self, context: np.ndarray, is_burst: bool) -> tuple[np.ndarray, np.ndarray]:
         # AR model prediction
-        ar_context = np.pad(context, (self.ar_context_dim - len(ar_context), 0))
+        ar_context = np.pad(context, (self.ar_context_dim - len(context), 0))
         ar_pred = self.ar_model.predict(valid=ar_context, steps=self.pred_dim)
 
         # NN model context
         nn_context = np.pad(
-            context, (self.nn_context_dim - len(nn_context), self.pred_dim)
+            context, (self.nn_context_dim - len(context), self.pred_dim)
         )
-        nn_context = torch.Tensor(nn_context[None, None, ...]).to(self.device)
+        nn_context = np.ascontiguousarray(
+            nn_context[None, None, ...], dtype=np.float32
+        )
 
         # NN model inference
-        with torch.no_grad():
-            nn_pred = self.neural_net(nn_context)
-            nn_pred = nn_pred[..., -self.pred_dim :]
-            nn_pred = nn_pred.squeeze().cpu().numpy()
+        nn_pred = self.session.run(None, {self.nn_input_name: nn_context})[0]
+        nn_pred = np.asarray(nn_pred)[..., -self.pred_dim :]
+        nn_pred = np.squeeze(nn_pred)
 
         # Apply fade-in to the neural network contribution (inbound fade-in)
         nn_pred[: self.nn_fade_dim] *= self.nn_fade

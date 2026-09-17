@@ -209,12 +209,12 @@ class Settings(object):
             if max_value is not None:
                 self.assert_setting_is_number_less_than(setting_name, max_value)
         except AssertionError as e:
-            if min_value is not None and max_value is not None:
-                raise AssertionError(
-                    f"{setting_name} should be in the range [{min_value}, {max_value}]"
-                )
-            else:
-                raise e
+            if min_value is not None:
+                if max_value is not None:
+                    raise AssertionError(
+                        f"{setting_name} should be in the range [{min_value}, {max_value}]"
+                    )
+            raise e
 
     def __change_setting__(self, name: str, value, change_callback: callable = None):
         if value == self.get(name):
@@ -768,7 +768,7 @@ class VermaPLCSettings(PLCSettings):
         fade_in: list[CrossfadeSettings] = None,
         crossfade_frequencies: list[int] = None,
         crossover_order: int = None,
-        model_path: str = "dl_models/model_bs256_100epochs_0.01_1e-3_1e-7.h5",
+        model_path: str = "dl_models/model_bs256_100epochs_0.01_1e-3_1e-7.onnx",
         fs_dl: int = 16000,
         context_length: int = 8000,
         hop_size: int = 160,
@@ -832,7 +832,7 @@ class PARCnetPLCSettings(PLCSettings):
         fade_in: list[CrossfadeSettings] = None,
         crossfade_frequencies: list[int] = None,
         crossover_order: int = None,
-        dl_model_path: str = "dl_models/parcnet-is2_mplc_challenge.pth",
+        dl_model_path: str = "dl_models/parcnet-is2_mplc_challenge.onnx",
         dl_fs: int = 44100,
         config_preset: PARCnetConfigPreset = PARCnetConfigPreset.is2_mplc_challenge,
         extra_packet_dim: int = 256,
