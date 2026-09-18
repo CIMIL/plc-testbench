@@ -24,10 +24,6 @@ def sinusoidal_crossfade(
     return np.sin(np.linspace(0, np.pi / 2, length_in_samples))
 
 
-def hann_crossfade(settings: CrossfadeSettings, length_in_samples: int) -> np.array:
-    return np.hanning(length_in_samples * 2)[settings.length_in_samples]
-
-
 class Crossfade(object):
     def __init__(
         self, settings: Settings, crossfade_settings: CrossfadeSettings

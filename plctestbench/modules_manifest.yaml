@@ -567,7 +567,6 @@ CrossfadeSettings:
         values:
           - power
           - sinusoidal
-          - hann
       - name: exponent
         type: float
         default: 1.0

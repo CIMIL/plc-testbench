@@ -89,6 +89,39 @@ If you want to use the HumanCalculator metric, you also need to install webMUSHR
     cd ..
 ```
 
+### Running the tests
+
+The test suite is made of **unit tests only**: it exercises the loss simulators, the PLC algorithms, the objective metrics, the crossfades and the DSP building blocks on seeded, in-memory mock inputs. No database, network access or external binary (such as `peaq`) is required.
+
+Install the package without its optional native extras (essentia, burg-plc, cpp-plc-template) plus the pinned test dependencies. Using a virtual environment is recommended:
+
+```bash
+    python -m venv .venv
+    source .venv/bin/activate
+    pip install -e . --no-deps
+    pip install -r requirements-test.txt
+```
+
+Run the whole suite:
+
+```bash
+    python -m pytest test -q
+```
+
+Run a single module or a single test:
+
+```bash
+    python -m pytest test/test_loss_simulators.py -q
+    python -m pytest test/test_plc_algorithms.py::test_zeros_plc_zeroes_exactly_the_lost_packet -q
+```
+
+Notes:
+
+- Every test is deterministic: random inputs come from fixed seeds, so any failure is reproducible.
+- Platform-gated tests skip automatically when a native dependency is unavailable (for example `BurgPLC` and `ExternalPLC`, which need `burg-python-bindings` and `cpp_plc_template`).
+- The PEAQ, PESQ, PLCMOS and MUSHRA metrics are deliberately not covered by the unit tests: they require external programs or a full listening test.
+- The same suite runs on every push to the `public` branch through the [`Tests`](.github/workflows/tests.yml) GitHub Actions workflow.
+
 ## Basic Usage
 
 The file `plctestbench.ipynb` contains a Jupyter Notebook with a basic example of how to use the tool.

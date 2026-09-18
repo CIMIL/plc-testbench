@@ -1,0 +1,29 @@
+# Test-only dependency set for the unit test suite.
+#
+# It mirrors the runtime pins from pyproject.toml for everything needed to
+# import and exercise the modules under test. It deliberately omits the
+# optional native extras (essentia, burg-plc, cpp-plc-template), the MongoDB /
+# pymongo stack and the PEAQ GStreamer plugin: those are platform-gated or long
+# to build and are not exercised by the unit tests (the affected code paths
+# skip automatically).
+#
+# Install with:
+#   pip install -e . --no-deps
+#   pip install -r requirements-test.txt
+
+pytest==9.1.1
+
+# Runtime dependencies imported (directly or transitively) by the modules
+# under test, pinned to the versions declared in pyproject.toml.
+numpy==1.26.0
+scipy==1.14.1
+librosa==0.10.1
+soundfile==0.12.1
+onnxruntime==1.27.0
+matplotlib==3.9.3
+tqdm==4.67.1
+PyYAML==6.0.3
+pandas==2.2.3
+numba==0.62.1
+ruamel-yaml==0.18.6
+ruamel-yaml-clib==0.2.12

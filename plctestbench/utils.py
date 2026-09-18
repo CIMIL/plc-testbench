@@ -1,5 +1,8 @@
 import hashlib
+import math
+import operator
 import sys
+from collections.abc import Callable
 from pathlib import Path
 from time import sleep
 
@@ -108,7 +111,7 @@ def escape_email(email):
     return email.replace("@", "_at_").replace(".", "_dot_")
 
 
-def dummy_progress_bar(worker, desc: str = None):
+def dummy_progress_bar(worker, desc: str | None = None):
     """
     This function is used to create a dummy progress bar.
     """
@@ -117,7 +120,9 @@ def dummy_progress_bar(worker, desc: str = None):
         sleep(DUMMY_BAR_SLEEP)
 
 
-def recursive_split_audio(audio: np.ndarray, xovers: list, bands: list = None) -> list:
+def recursive_split_audio(
+    audio: np.ndarray, xovers: list, bands: list | None = None
+) -> list:
     if bands is None:
         bands = []
     lp_audio, hp_audio = xovers[0].split(audio)
@@ -128,13 +133,13 @@ def recursive_split_audio(audio: np.ndarray, xovers: list, bands: list = None) -
     return recursive_split_audio(hp_audio, xovers[1:], bands)
 
 
-def force_2d(arr):
+def force_2d(arr) -> np.ndarray:
     if arr.ndim == 1:
         arr = np.expand_dims(arr, axis=-1)
     return arr
 
 
-def prepare_progress_monitor(progress_monitor) -> callable:
+def prepare_progress_monitor(progress_monitor) -> Callable:
     def composite_progress_monitor(iterable, desc):
         for item in iterable:
             progress_monitor.update(1)
@@ -167,15 +172,17 @@ def extract_intorni(
                 boundary_indexes.append((start_idx, end_idx))
         return boundary_indexes
 
-    intorno_samples = float(intorno_size * fs) / 1000
+    intorno_samples = intorno_size * fs / 1000
     audio_data = audio_file.get_data()
+    # Normalise any numpy integer indices to plain Python ints.
+    lost_samples_idxs = [operator.index(idx) for idx in lost_samples_idxs]
     boundary_indexes = find_boundary_indexes(lost_samples_idxs)
     intorni = []
     packet_idxs = []
     for start_idx, end_idx in boundary_indexes:
         center_idx = (start_idx + end_idx) // 2
-        start_sample = int(center_idx - intorno_samples // 2)
-        end_sample = int(center_idx + intorno_samples // 2)
+        start_sample = math.trunc(center_idx - intorno_samples // 2)
+        end_sample = math.trunc(center_idx + intorno_samples // 2)
         intorno = audio_data[start_sample:end_sample]
         if len(intorno) == 0:
             continue
@@ -183,7 +190,7 @@ def extract_intorni(
             intorni.append(intorno.copy())
         else:
             intorni.append(intorno)
-        packet_idxs.append(int(center_idx // packet_size))
+        packet_idxs.append(center_idx // packet_size)
     return packet_idxs, intorni
 
 
@@ -208,29 +215,29 @@ def force_single_loss_per_stimulus(lost_samples_idxs, fs, spacing, samples_per_p
 
 
 def fade_in(audio, fs, fade_in_time) -> None:
-    fade_in_samples = int(fade_in_time * fs / 1000)
-    fade_in_window = np.linspace(0, 1, int(fade_in_samples), dtype=audio.dtype)
+    fade_in_samples = math.trunc(fade_in_time * fs / 1000)
+    fade_in_window = np.linspace(0, 1, fade_in_samples, dtype=audio.dtype)
     if audio.ndim > 1:
         fade_in_window = fade_in_window[:, np.newaxis]
     audio[:fade_in_samples] *= fade_in_window
 
 
 def fade_out(audio, fs, fade_out_time) -> None:
-    fade_out_samples = int(fade_out_time * fs / 1000)
-    fade_out_window = np.linspace(1, 0, int(fade_out_samples), dtype=audio.dtype)
+    fade_out_samples = math.trunc(fade_out_time * fs / 1000)
+    fade_out_window = np.linspace(1, 0, fade_out_samples, dtype=audio.dtype)
     if audio.ndim > 1:
         fade_out_window = fade_out_window[:, np.newaxis]
     audio[-fade_out_samples:] *= fade_out_window
 
 
-def leading_silence(audio, fs, silence_time) -> None:
-    silence_samples = int(silence_time * fs / 1000)
+def leading_silence(audio, fs, silence_time) -> np.ndarray:
+    silence_samples = math.trunc(silence_time * fs / 1000)
     silence = np.zeros((silence_samples, audio.shape[1]), dtype=audio.dtype)
     return np.concatenate((silence, audio), axis=0)
 
 
-def trailing_silence(audio, fs, silence_time) -> None:
-    silence_samples = int(silence_time * fs / 1000)
+def trailing_silence(audio, fs, silence_time) -> np.ndarray:
+    silence_samples = math.trunc(silence_time * fs / 1000)
     silence = np.zeros((silence_samples, audio.shape[1]), dtype=audio.dtype)
     return np.concatenate((audio, silence), axis=0)
 

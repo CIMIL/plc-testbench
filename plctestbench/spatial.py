@@ -22,11 +22,11 @@ class MidSideCodec(object):
 
     - ``mid = (left + right) / 2``
     - ``side = (left - right) / 2``
-    - ``left = (mid + side) * 2``
-    - ``right = (mid - side) * 2``
+    - ``left = mid + side``
+    - ``right = mid - side``
 
-    This decode implementation applies a factor of ``2`` after recombination,
-    matching the scaling used in the provided code.
+    The transform is the exact inverse of :meth:`encode`, so
+    ``decode(encode(x)) == x``.
 
     Example:
         >>> codec = MidSideCodec()
@@ -91,6 +91,6 @@ class MidSideCodec(object):
             A NumPy array with shape ``(num_samples, 2)``, where column 0 is
             the left channel and column 1 is the right channel.
         """
-        left = (mid_side[:, 0] + mid_side[:, 1]) * 2
-        right = (mid_side[:, 0] - mid_side[:, 1]) * 2
+        left = mid_side[:, 0] + mid_side[:, 1]
+        right = mid_side[:, 0] - mid_side[:, 1]
         return np.stack((left, right), axis=1)

@@ -401,7 +401,6 @@ class StereoImageType(Enum):
 class CrossfadeFunction(Enum):
     power = "power"
     sinusoidal = "sinusoidal"
-    hann = "hann"
 
     def toJson(self):
         return self.value
@@ -611,8 +610,8 @@ class ZerosPLCSettings(PLCSettings):
 
     def __init__(
         self,
-        crossfade: list[CrossfadeSettings] = None,
-        fade_in: list[CrossfadeSettings] = None,
+        crossfade: list[CrossfadeSettings] | CrossfadeSettings = None,
+        fade_in: list[CrossfadeSettings] | CrossfadeSettings = None,
         crossfade_frequencies: list[int] = None,
         crossover_order: int = None,
     ) -> None:
@@ -633,8 +632,8 @@ class LastPacketPLCSettings(PLCSettings):
 
     def __init__(
         self,
-        crossfade: list[CrossfadeSettings] = None,
-        fade_in: list[CrossfadeSettings] = None,
+        crossfade: list[CrossfadeSettings] | CrossfadeSettings = None,
+        fade_in: list[CrossfadeSettings] | CrossfadeSettings = None,
         crossfade_frequencies: list[int] = None,
         crossover_order: int = None,
         mirror_x: bool = False,
@@ -656,8 +655,8 @@ class LowCostPLCSettings(PLCSettings):
 
     def __init__(
         self,
-        crossfade: list[CrossfadeSettings] = None,
-        fade_in: list[CrossfadeSettings] = None,
+        crossfade: list[CrossfadeSettings] | CrossfadeSettings = None,
+        fade_in: list[CrossfadeSettings] | CrossfadeSettings = None,
         crossfade_frequencies: list[int] = None,
         crossover_order: int = None,
         max_frequency: float = 4800,
@@ -749,8 +748,8 @@ class ExternalPLCSettings(PLCSettings):
 
     def __init__(
         self,
-        crossfade: list[CrossfadeSettings] = None,
-        fade_in: list[CrossfadeSettings] = None,
+        crossfade: list[CrossfadeSettings] | CrossfadeSettings = None,
+        fade_in: list[CrossfadeSettings] | CrossfadeSettings = None,
         crossfade_frequencies: list[int] = None,
         crossover_order: int = None,
     ):
@@ -764,8 +763,8 @@ class VermaPLCSettings(PLCSettings):
 
     def __init__(
         self,
-        crossfade: list[CrossfadeSettings] = None,
-        fade_in: list[CrossfadeSettings] = None,
+        crossfade: list[CrossfadeSettings] | CrossfadeSettings = None,
+        fade_in: list[CrossfadeSettings] | CrossfadeSettings = None,
         crossfade_frequencies: list[int] = None,
         crossover_order: int = None,
         model_path: str = "dl_models/model_bs256_100epochs_0.01_1e-3_1e-7.onnx",
@@ -828,8 +827,8 @@ class PARCnetPLCSettings(PLCSettings):
 
     def __init__(
         self,
-        crossfade: list[CrossfadeSettings] = None,
-        fade_in: list[CrossfadeSettings] = None,
+        crossfade: list[CrossfadeSettings] | CrossfadeSettings = None,
+        fade_in: list[CrossfadeSettings] | CrossfadeSettings = None,
         crossfade_frequencies: list[int] = None,
         crossover_order: int = None,
         dl_model_path: str = "dl_models/parcnet-is2_mplc_challenge.onnx",

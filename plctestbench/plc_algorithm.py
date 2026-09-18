@@ -24,6 +24,7 @@ from .verma import VermaNet
 from .settings import (
     PARCnetPLCSettings,
     BurgPLCSettings,
+    ClipStrategy,
     VermaPLCSettings,
     ExternalPLCSettings,
     LastPacketPLCSettings,
@@ -290,18 +291,28 @@ class LastPacketPLC(PLCAlgorithm):
                     reconstructed_buffer[:, channel] = _flip_in_place(
                         reconstructed_buffer[:, channel]
                     )
-                    for sample in range(np.shape(reconstructed_buffer)[0]):
-                        if abs(sample) > 1:
-                            if self.clip_strategy == "subtract":
-                                reconstructed_buffer[sample:, channel] = (
-                                    reconstructed_buffer[sample:, channel]
-                                    - (sample - np.sign(sample))
-                                )
-                            elif self.clip_strategy == "flip":
-                                reconstructed_buffer[sample:, channel] = _flip_in_place(
-                                    reconstructed_buffer[sample:, channel]
-                                )
+                    reconstructed_buffer[:, channel] = self._clip(
+                        reconstructed_buffer[:, channel]
+                    )
         return reconstructed_buffer
+
+    def _clip(self, buffer: np.ndarray) -> np.ndarray:
+        """
+        Bring a mirrored packet back into the [-1, 1] range.
+
+        Mirroring around the first sample can push the waveform outside the
+        valid range. ``ClipStrategy.clip`` hard-limits every sample, while
+        ``ClipStrategy.subtract`` shifts the remainder of the packet by the
+        excess of the first out-of-range sample, preserving its shape.
+        """
+        if self.clip_strategy == ClipStrategy.clip:
+            return np.clip(buffer, -1.0, 1.0)
+
+        out_of_range = np.flatnonzero(np.abs(buffer) > 1.0)
+        if out_of_range.size > 0:
+            index = out_of_range[0]
+            buffer[index:] -= buffer[index] - np.sign(buffer[index])
+        return buffer
 
 
 class LowCostPLC(PLCAlgorithm):

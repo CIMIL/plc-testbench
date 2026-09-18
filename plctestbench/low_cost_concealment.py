@@ -19,7 +19,7 @@ class LowCostConcealment:
         beta: float,
         n_m: int,
         fade_in_length: int,
-        fade_out_length: int,
+        fade_out_length: float,
         extraction_length: int,
     ) -> None:
         self._max_frequency = max_frequency
@@ -151,7 +151,7 @@ class LowCostConcealment:
         return alligned_concealment
 
     def fade_out(self, buffer: np.ndarray, concealment: np.ndarray):
-        fade_out_length = int(self._fade_out_length * self._packet_size)
+        fade_out_length = floor(self._fade_out_length * self._packet_size)
         window = np.arange(0, 1, 1 / fade_out_length)[1:]
         buffer[: fade_out_length - 1] = np.multiply(
             buffer[: fade_out_length - 1], window
