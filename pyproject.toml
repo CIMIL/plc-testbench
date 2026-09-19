@@ -1,6 +1,6 @@
 [build-system]
-requires = ["poetry-core>=2.0.0,<3.0.0"]
-build-backend = "poetry.core.masonry.api"
+requires = ["hatchling"]
+build-backend = "hatchling.build"
 
 [project]
 name = "plctestbench"
@@ -13,46 +13,48 @@ authors = [
 ]
 maintainers = [{ name = "Filippo Daniotti", email = "fpp.daniotti@gmail.com" }]
 license = { text = "Your license here" }
+requires-python = ">=3.11,<3.12"
 classifiers = ["Programming Language :: Python :: 3"]
 
-[tool.poetry.dependencies]
-essentia = { version = "2.1b6.dev1389", markers = "platform_machine == 'x86_64'" }
-python = ">=3.11,<3.12"
-numpy = { version = "1.26.0", python = ">=3.10,<3.13" }
-soundfile = "0.12.1"
-anytree = { version = "2.12.1", python = ">=3.10,<4.0" }
-pymongo = "4.10.1"
-tqdm = "4.67.1"
-matplotlib = "3.9.3"
-typing_inspect = "*"
-tinydb = { version = "4.8.2", python = ">=3.10,<4.0" }
-PyYAML = "6.0.3"
-ruamel-yaml = "0.18.6"
-ruamel-yaml-clib = "0.2.12"
-librosa = "0.10.1"
-scipy = "1.14.1"
-pandas = "^2.2.3"
-burg-plc = { git = "https://github.com/CIMIL/burg-python-bindings.git", markers = "sys_platform == 'linux'" }
-onnxruntime = "1.27.0"
+dependencies = [
+    # Platform-gated extras: essentia ships x86_64 wheels only, burg-plc is a
+    # Linux-only git dependency (see `uv sync` notes in the README).
+    "essentia==2.1b6.dev1389 ; platform_machine == 'x86_64'",
+    "burg-plc @ git+https://github.com/CIMIL/burg-python-bindings.git ; sys_platform == 'linux'",
+    "numpy==1.26.0",
+    "soundfile==0.12.1",
+    "anytree==2.12.1",
+    "pymongo==4.10.1",
+    "tqdm==4.67.1",
+    "matplotlib==3.9.3",
+    "typing-inspect",
+    "tinydb==4.8.2",
+    "PyYAML==6.0.3",
+    "ruamel-yaml==0.18.6",
+    "ruamel-yaml-clib==0.2.12",
+    "librosa==0.10.1",
+    "scipy==1.14.1",
+    "pandas>=2.2.3,<3.0.0",
+    "onnxruntime==1.27.0",
+]
 
-[tool.poetry.group.notebook]
-optional = true
+[dependency-groups]
+notebook = [
+    "ipywidgets>=8.1.5,<9.0.0",
+    "ipykernel==6.30.1",
+]
+test = [
+    "pytest>=9.1.1,<10.0.0",
+]
 
-[tool.poetry.group.notebook.dependencies]
-ipywidgets = "^8.1.5"
-ipykernel = "6.30.1"
-
-# [tool.poetry.group.cpp_template]
-# optional = true
-
-# [tool.poetry.group.cpp_template.dependencies]
 # cpp-plc-template = { git = "https://github.com/LucaVignati/cpp_plc_template.git" }
 
-[tool.poetry.group.test]
-optional = true
+[tool.hatch.build.targets.wheel]
+packages = ["plctestbench"]
 
-[tool.poetry.group.test.dependencies]
-pytest = "^9.1.1"
+# burg-plc is declared as a git dependency (Linux-only).
+[tool.hatch.metadata]
+allow-direct-references = true
 
 # The unit test suite is run with `python -m pytest test`. The pinned,
 # platform-independent dependency set used by CI and by contributors lives in

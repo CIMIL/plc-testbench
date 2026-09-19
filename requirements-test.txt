@@ -7,9 +7,11 @@
 # to build and are not exercised by the unit tests (the affected code paths
 # skip automatically).
 #
-# Install with:
-#   pip install -e . --no-deps
-#   pip install -r requirements-test.txt
+# Development environments are managed by uv (`uv sync --all-groups`, see the
+# README); this file exists so CI can install a lean, platform-independent
+# environment without building the Linux-only git dependencies. Install with:
+#   uv pip install -e . --no-deps
+#   uv pip install -r requirements-test.txt
 
 pytest==9.1.1
 

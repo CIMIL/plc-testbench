@@ -39,15 +39,16 @@ Then run the container setting the port to 27017 and the name to mongodb. Also s
     mongo:6.0.8
 ```
 
-Clone this repository, install the requirements and the plctestbench package:
+Clone this repository and install the requirements and the plctestbench package with [uv](https://docs.astral.sh/uv/):
 
 ```bash
     git clone https://github.com/LucaVignati/plc-testbench.git
     cd plc-testbench
-    pip install -r requirements.txt
-    pip install .
+    uv sync --all-groups
     cd ..
 ```
+
+`uv sync --all-groups` creates a local virtual environment (`.venv`) and installs the full runtime dependency set plus the notebook and test groups, using the versions pinned in `uv.lock`. To run commands inside that environment use `uv run <command>`. Note that the optional native extras (essentia, burg-plc) are only installed on the platforms they support.
 
 If you want to use it inside Jupyter Notebook you also need to install the ipywidgets package:
 ```bash
@@ -93,26 +94,23 @@ If you want to use the HumanCalculator metric, you also need to install webMUSHR
 
 The test suite is made of **unit tests only**: it exercises the loss simulators, the PLC algorithms, the objective metrics, the crossfades and the DSP building blocks on seeded, in-memory mock inputs. No database, network access or external binary (such as `peaq`) is required.
 
-Install the package without its optional native extras (essentia, burg-plc, cpp-plc-template) plus the pinned test dependencies. Using a virtual environment is recommended:
+Create the test environment with uv (installs the package plus the `test` dependency group):
 
 ```bash
-    python -m venv .venv
-    source .venv/bin/activate
-    pip install -e . --no-deps
-    pip install -r requirements-test.txt
+    uv sync --group test
 ```
 
 Run the whole suite:
 
 ```bash
-    python -m pytest test -q
+    uv run pytest test -q
 ```
 
 Run a single module or a single test:
 
 ```bash
-    python -m pytest test/test_loss_simulators.py -q
-    python -m pytest test/test_plc_algorithms.py::test_zeros_plc_zeroes_exactly_the_lost_packet -q
+    uv run pytest test/test_loss_simulators.py -q
+    uv run pytest test/test_plc_algorithms.py::test_zeros_plc_zeroes_exactly_the_lost_packet -q
 ```
 
 Notes:
@@ -120,6 +118,7 @@ Notes:
 - Every test is deterministic: random inputs come from fixed seeds, so any failure is reproducible.
 - Platform-gated tests skip automatically when a native dependency is unavailable (for example `BurgPLC` and `ExternalPLC`, which need `burg-python-bindings` and `cpp_plc_template`).
 - The PEAQ, PESQ, PLCMOS and MUSHRA metrics are deliberately not covered by the unit tests: they require external programs or a full listening test.
+- CI installs a lean, platform-independent environment instead (`uv pip install -e . --no-deps` plus `requirements-test.txt`) because the full `uv sync` would also build the Linux-only `burg-plc` git dependency. The suite is identical in both cases.
 - The same suite runs on every push to the `public` branch through the [`Tests`](.github/workflows/tests.yml) GitHub Actions workflow.
 
 ## Basic Usage
