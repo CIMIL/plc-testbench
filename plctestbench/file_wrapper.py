@@ -1,42 +1,56 @@
 from __future__ import annotations
+
 import os
 import pickle
 from pathlib import Path
-from numpy import ndarray
-import soundfile as sf
+from typing import Any, Iterator
+
 import numpy as np
+import soundfile as sf
+from numpy import ndarray
+
 from plctestbench.utils import compute_hash
 
-DEFAULT_DTYPE = 'float32'
+DEFAULT_DTYPE = "float32"
+
 
 def calculate_hash(*args) -> int:
-    data = ''
+    data = ""
     for arg in args:
         data = data + str(arg)
     return compute_hash(data)
 
+
 class FileWrapper(object):
-    def __init__(self, data=None, path: str=None, persist=True) -> None:
-        self.data = np.ascontiguousarray(data.astype(DEFAULT_DTYPE)) if isinstance(data, np.ndarray) else data
+    def __init__(self, data=None, path: str = None, persist=True) -> None:
+        self.data = (
+            np.ascontiguousarray(data.astype(DEFAULT_DTYPE))
+            if isinstance(data, np.ndarray)
+            else data
+        )
         self.path = path
         self.persist = persist
 
         if self.path is None:
-            raise ValueError('path must be specified')
+            raise ValueError("path must be specified")
 
         if self.data is not None:
             self.save()
 
         self.load()
 
-        self.hash = calculate_hash(self.data.tobytes()) if isinstance(self.data, ndarray) else hash(self.data)
+        self.hash = (
+            calculate_hash(self.data.tobytes())
+            if isinstance(self.data, ndarray)
+            else hash(self.data)
+        )
 
     @classmethod
     def from_path(cls, path: str) -> FileWrapper:
         if not Path(path).exists():
             return None
 
-        if path.split('.')[-1] == 'wav':
+        if path.split(".")[-1] == "wav":
             file = AudioFile(path=path)
         else:
             file = DataFile(path=path)
@@ -48,7 +62,7 @@ class FileWrapper(object):
     def get_path(self) -> str:
         return self.path
 
-    def set_path(self, path) -> None:
+    def set_path(self, path: str) -> None:
         self.path = path
 
     def save(self) -> None:
@@ -63,15 +77,19 @@ class FileWrapper(object):
     def __hash__(self):
         return self.hash
 
+
 class AudioFile(FileWrapper):
-    def __init__(self, data: ndarray=None,
-                       path: str=None,
-                       samplerate: float=None,
-                       channels: int=None,
-                       subtype: str=None,
-                       endian: str=None,
-                       audio_format: str=None,
-                       persist=True) -> None:
+    def __init__(
+        self,
+        data: ndarray = None,
+        path: str = None,
+        samplerate: float = None,
+        channels: int = None,
+        subtype: str = None,
+        endian: str = None,
+        audio_format: str = None,
+        persist=True,
+    ) -> None:
 
         self.samplerate = samplerate
         self.channels = channels
@@ -81,28 +99,29 @@ class AudioFile(FileWrapper):
         super().__init__(data, path, persist)
 
     @classmethod
-    def from_audio_file(cls, audio_file: AudioFile,
-                             new_data: ndarray=None,
-                             new_path: str=None,
-                             new_samplerate: float=None,
-                             new_channels: int=None,
-                             new_subtype: str=None,
-                             new_endian: str=None,
-                             new_audio_format: str=None) -> AudioFile:
+    def from_audio_file(
+        cls,
+        audio_file: AudioFile,
+        new_data: ndarray = None,
+        new_path: str = None,
+        new_samplerate: float = None,
+        new_channels: int = None,
+        new_subtype: str = None,
+        new_endian: str = None,
+        new_audio_format: str = None,
+    ) -> AudioFile:
         data = audio_file.data if new_data is None else new_data
         path = audio_file.path if new_path is None else new_path
         samplerate = audio_file.samplerate if new_samplerate is None else new_samplerate
         channels = audio_file.channels if new_channels is None else new_channels
         subtype = audio_file.subtype if new_subtype is None else new_subtype
         endian = audio_file.endian if new_endian is None else new_endian
-        audio_format = audio_file.audio_format if new_audio_format is None else new_audio_format
-        new_instance = cls(data,
-                           path,
-                           samplerate,
-                           channels,
-                           subtype,
-                           endian,
-                           audio_format)
+        audio_format = (
+            audio_file.audio_format if new_audio_format is None else new_audio_format
+        )
+        new_instance = cls(
+            data, path, samplerate, channels, subtype, endian, audio_format
+        )
         return new_instance
 
     def get_samplerate(self) -> float:
@@ -121,15 +140,17 @@ class AudioFile(FileWrapper):
         return self.audio_format
 
     def save(self) -> None:
-        sf.write(self.path,
-                 self.data,
-                 self.samplerate,
-                 self.subtype,
-                 self.endian,
-                 self.audio_format)
+        sf.write(
+            self.path,
+            self.data,
+            self.samplerate,
+            self.subtype,
+            self.endian,
+            self.audio_format,
+        )
 
     def load(self) -> ndarray:
-        with sf.SoundFile(self.path, 'r') as file:
+        with sf.SoundFile(self.path, "r") as file:
             self.data = file.read(dtype=DEFAULT_DTYPE)
             self.path = file.name
             self.samplerate = file.samplerate
@@ -140,24 +161,26 @@ class AudioFile(FileWrapper):
 
         return self.data
 
+
 class DataFile(FileWrapper):
-    def __init__(self, data=None, path: str=None, persist=True) -> None:
+    def __init__(self, data=None, path: str = None, persist=True) -> None:
         super().__init__(data, path, persist)
 
     def save(self) -> None:
-        with open(self.path, 'wb') as file:
+        with open(self.path, "wb") as file:
             pickle.dump(self.data, file)
 
     def load(self) -> None:
-        with open(self.path, 'rb') as file:
+        with open(self.path, "rb") as file:
             try:
                 self.data = pickle.load(file)
             except pickle.UnpicklingError:
                 self.data = None
 
 
-class OutputAnalysis():
+class OutputAnalysis:
     pass
+
 
 class SimpleCalculatorData(OutputAnalysis):
     def __init__(self, error: ndarray) -> None:
@@ -166,20 +189,21 @@ class SimpleCalculatorData(OutputAnalysis):
     def get_error(self) -> ndarray:
         return self._error
 
-    def __len__(self):
+    def __len__(self) -> int:
         return len(self._error)
 
-    def __iter__(self):
-        return self._error.__iter__()
+    def __iter__(self) -> Iterator[Any]:
+        return iter(self._error)
 
-    def __next__(self):
-        return self._error.__next__()
+    def __next__(self) -> Any:
+        return next(self._error)
 
-    def __getitem__(self, key):
-        return self._error.__getitem__(key)
+    def __getitem__(self, key: int) -> Any:
+        return self._error[key]
 
     def __hash__(self) -> int:
         return calculate_hash(self._error.tobytes())
+
 
 class PEAQData(OutputAnalysis):
     def __init__(self, peaq_odg: float, peaq_di: float) -> None:

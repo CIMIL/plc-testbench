@@ -1,17 +1,29 @@
 from copy import deepcopy
-from anytree import NodeMixin
-import numpy as np
 
-from plctestbench.worker import Worker
-from plctestbench.file_wrapper import FileWrapper, AudioFile, DataFile
+import numpy as np
+from anytree import NodeMixin
+
+from plctestbench.file_wrapper import AudioFile, DataFile, FileWrapper
 from plctestbench.settings import Settings
 from plctestbench.utils import dummy_progress_bar
+from plctestbench.worker import Worker
+
 
 class BaseNode(object):
     pass
 
+
 class Node(BaseNode, NodeMixin):
-    def __init__(self, file: FileWrapper=None, worker: Worker=None, settings: Settings=None, absolute_path: str=None, parent=None, database=None, folder_name=None) -> None:
+    def __init__(
+        self,
+        file: FileWrapper = None,
+        worker: Worker = None,
+        settings: Settings = None,
+        absolute_path: str = None,
+        parent=None,
+        database=None,
+        folder_name=None,
+    ) -> None:
         self.file = file
         self.settings = deepcopy(settings)
         if parent is not None:
@@ -75,8 +87,6 @@ class Node(BaseNode, NodeMixin):
         return str(hash(self.settings))
 
     def run(self):
-
-        # Load from database if possible, otherwise run the worker
         current_node = self._load_from_database()
         if current_node:
             self.persistent = current_node["persistent"]
@@ -86,28 +96,61 @@ class Node(BaseNode, NodeMixin):
         else:
             self.file = FileWrapper.from_path(current_node["filepath"])
 
-            # Manage consistency between database and filesystem
             if str(hash(self.file)) != current_node["file_hash"]:
                 if self.parent is None:
-                    raise Exception("The following audio file has changed: " + self.file.get_path())
+                    raise Exception(
+                        "The following audio file has changed: " + self.file.get_path()
+                    )
                 else:
                     self._get_database().delete_node(self.get_id())
                     self.run()
             else:
-                # Dummy progress bar needed when not running the worker
-                dummy_progress_bar(self.worker)
-    
+                dummy_progress_bar(self.worker, desc=f"{self.worker}|{self.get_id()}")
+
     def __str__(self) -> str:
-        return "file: " + str(self.file) + '\n' +\
-               "worker: " + str(self.worker) + '\n' +\
-               "folder name: " + str(self.folder_name) + '\n' + \
-               "absolute path: " + str(self.absolute_path)
+        return (
+            "file: "
+            + str(self.file)
+            + "\n"
+            + "worker: "
+            + str(self.worker)
+            + "\n"
+            + "id: "
+            + str(self.get_id())
+            + "\n"
+            + "folder name: "
+            + str(self.folder_name)
+            + "\n"
+            + "absolute path: "
+            + str(self.absolute_path)
+        )
+
+    # def __repr__(self):
+    #     return self.__str__()
+
 
 class OriginalTrackNode(Node):
-    def __init__(self, file=None, worker=None, settings=None, absolute_path=None, parent=None, database=None, folder_name=None) -> None:
-        super().__init__(file=file, worker=worker, settings=settings, absolute_path=absolute_path, parent=parent, database=database, folder_name=folder_name)
-        self.file = AudioFile(path=self.absolute_path + '.wav')
-        self.settings.add('fs', self.file.get_samplerate())
+    def __init__(
+        self,
+        file=None,
+        worker=None,
+        settings=None,
+        absolute_path=None,
+        parent=None,
+        database=None,
+        folder_name=None,
+    ) -> None:
+        super().__init__(
+            file=file,
+            worker=worker,
+            settings=settings,
+            absolute_path=absolute_path,
+            parent=parent,
+            database=database,
+            folder_name=folder_name,
+        )
+        self.file = AudioFile(path=self.absolute_path + ".wav")
+        self.settings.add("fs", self.file.get_samplerate())
 
     def get_data(self) -> np.ndarray:
         return self.file.get_data()
@@ -116,13 +159,30 @@ class OriginalTrackNode(Node):
         return self.absolute_path.rpartition("/")[2].split(".")[0]
 
     def _run(self) -> None:
-        print(self.get_track_name())
         self.get_worker().run()
         self.persistent = self.get_worker().is_persistent()
 
+
 class LostSamplesMaskNode(Node):
-    def __init__(self, file=None, worker=None, settings=None, absolute_path=None, parent=None, database=None, folder_name=None) -> None:
-        super().__init__(file=file, worker=worker, settings=settings, absolute_path=absolute_path, parent=parent, database=database, folder_name=folder_name)
+    def __init__(
+        self,
+        file=None,
+        worker=None,
+        settings=None,
+        absolute_path=None,
+        parent=None,
+        database=None,
+        folder_name=None,
+    ) -> None:
+        super().__init__(
+            file=file,
+            worker=worker,
+            settings=settings,
+            absolute_path=absolute_path,
+            parent=parent,
+            database=database,
+            folder_name=folder_name,
+        )
 
     def get_data(self) -> np.ndarray:
         return self.file.get_data()
@@ -133,13 +193,31 @@ class LostSamplesMaskNode(Node):
     def _run(self) -> None:
         original_track_data = self.get_original_track().get_data()
         num_samples = len(original_track_data)
-        lost_samples_idx = self.get_worker().run(num_samples)
+        lost_samples_idx = self.get_worker().run(num_samples, self.get_id())
         self.persistent = self.get_worker().is_persistent()
-        self.file = DataFile(lost_samples_idx, self.absolute_path + '.npy')
+        self.file = DataFile(lost_samples_idx, self.absolute_path + ".npy")
+
 
 class ReconstructedTrackNode(Node):
-    def __init__(self, file=None, worker=None, settings=None, absolute_path=None, parent=None, database=None, folder_name=None) -> None:
-        super().__init__(file=file, worker=worker, settings=settings, absolute_path=absolute_path, parent=parent, database=database, folder_name=folder_name)
+    def __init__(
+        self,
+        file=None,
+        worker=None,
+        settings=None,
+        absolute_path=None,
+        parent=None,
+        database=None,
+        folder_name=None,
+    ) -> None:
+        super().__init__(
+            file=file,
+            worker=worker,
+            settings=settings,
+            absolute_path=absolute_path,
+            parent=parent,
+            database=database,
+            folder_name=folder_name,
+        )
 
     def get_data(self) -> np.ndarray:
         return self.file.get_data()
@@ -154,13 +232,35 @@ class ReconstructedTrackNode(Node):
         original_track = self.get_original_track()
         original_track_data = original_track.get_data()
         lost_samples_idx = self.get_lost_samples_mask().get_data()
-        reconstructed_track = self.get_worker().run(original_track_data, lost_samples_idx)
+        reconstructed_track = self.get_worker().run(
+            original_track_data, lost_samples_idx, self.get_id()
+        )
         self.persistent = self.get_worker().is_persistent()
-        self.file = AudioFile.from_audio_file(original_track, reconstructed_track, self.absolute_path + '.wav')
+        self.file = AudioFile.from_audio_file(
+            original_track, reconstructed_track, self.absolute_path + ".wav"
+        )
+
 
 class OutputAnalysisNode(Node):
-    def __init__(self, file=None, worker=None, settings=None, absolute_path=None, parent=None, database=None, folder_name=None) -> None:
-        super().__init__(file=file, worker=worker, settings=settings, absolute_path=absolute_path, parent=parent, database=database, folder_name=folder_name)
+    def __init__(
+        self,
+        file=None,
+        worker=None,
+        settings=None,
+        absolute_path=None,
+        parent=None,
+        database=None,
+        folder_name=None,
+    ) -> None:
+        super().__init__(
+            file=file,
+            worker=worker,
+            settings=settings,
+            absolute_path=absolute_path,
+            parent=parent,
+            database=database,
+            folder_name=folder_name,
+        )
 
     def get_data(self) -> np.ndarray:
         return self.file.get_data()
@@ -178,6 +278,8 @@ class OutputAnalysisNode(Node):
         original_track = self.get_original_track()
         reconstructed_track = self.get_reconstructed_track()
         lost_samples_idx = self.get_lost_samples_mask()
-        output_analysis = self.get_worker().run(original_track, reconstructed_track, lost_samples_idx)
+        output_analysis = self.get_worker().run(
+            original_track, reconstructed_track, lost_samples_idx, self.get_id()
+        )
         self.persistent = self.get_worker().is_persistent()
-        self.file = DataFile(output_analysis, self.absolute_path + '.pickle')
+        self.file = DataFile(output_analysis, self.absolute_path + ".pickle")

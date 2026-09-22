@@ -1,0 +1,45 @@
+---
+name: Tests
+
+on:
+  push:
+    branches: [public]
+  pull_request:
+    branches: [public]
+
+# Cancel superseded runs on the same ref to keep the queue short.
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  unit-tests:
+    name: Unit tests (Python 3.11)
+    runs-on: ubuntu-latest
+
+    env:
+      # The DSP modules import matplotlib; keep it headless on CI.
+      MPLBACKEND: Agg
+      PYTHONDONTWRITEBYTECODE: "1"
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.11"
+          enable-cache: true
+          cache-dependency-glob: requirements-test.txt
+
+      - name: Install the package without optional native extras
+        run: |
+          uv pip install --system -e . --no-deps
+
+      - name: Install the pinned test dependencies
+        run: |
+          uv pip install --system -r requirements-test.txt
+
+      - name: Run the unit test suite
+        run: python -m pytest test -q

@@ -1,0 +1,65 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "plctestbench"
+version = "0.10.0"
+description = "Framework comparison and benchmarking of error concealment algorithms"
+readme = "README.md"
+authors = [
+    { name = "Luca Vignati", email = "luca.vignati@vignati.net" },
+    { name = "Filippo Daniotti", email = "fpp.daniotti@gmail.com" },
+]
+maintainers = [{ name = "Filippo Daniotti", email = "fpp.daniotti@gmail.com" }]
+license = { text = "Your license here" }
+requires-python = ">=3.11,<3.12"
+classifiers = ["Programming Language :: Python :: 3"]
+
+dependencies = [
+    # Platform-gated extras: essentia ships x86_64 wheels only, burg-plc is a
+    # Linux-only git dependency (see `uv sync` notes in the README).
+    "essentia==2.1b6.dev1389 ; platform_machine == 'x86_64'",
+    "burg-plc @ git+https://github.com/CIMIL/burg-python-bindings.git ; sys_platform == 'linux'",
+    "numpy==1.26.0",
+    "soundfile==0.12.1",
+    "anytree==2.12.1",
+    "pymongo==4.10.1",
+    "tqdm==4.67.1",
+    "matplotlib==3.9.3",
+    "typing-inspect",
+    "tinydb==4.8.2",
+    "PyYAML==6.0.3",
+    "ruamel-yaml==0.18.6",
+    "ruamel-yaml-clib==0.2.12",
+    "librosa==0.10.1",
+    "scipy==1.14.1",
+    "pandas>=2.2.3,<3.0.0",
+    "onnxruntime==1.27.0",
+]
+
+[dependency-groups]
+notebook = [
+    "ipywidgets>=8.1.5,<9.0.0",
+    "ipykernel==6.30.1",
+]
+test = [
+    "pytest>=9.1.1,<10.0.0",
+]
+
+# cpp-plc-template = { git = "https://github.com/LucaVignati/cpp_plc_template.git" }
+
+[tool.hatch.build.targets.wheel]
+packages = ["plctestbench"]
+
+# burg-plc is declared as a git dependency (Linux-only).
+[tool.hatch.metadata]
+allow-direct-references = true
+
+# The unit test suite is run with `python -m pytest test`. The pinned,
+# platform-independent dependency set used by CI and by contributors lives in
+# requirements-test.txt (see the README).
+[tool.pytest.ini_options]
+testpaths = ["test"]
+pythonpath = ["."]
+addopts = "-ra"

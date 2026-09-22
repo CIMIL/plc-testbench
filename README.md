@@ -39,15 +39,16 @@ Then run the container setting the port to 27017 and the name to mongodb. Also s
     mongo:6.0.8
 ```
 
-Clone this repository, install the requirements and the plctestbench package:
+Clone this repository and install the requirements and the plctestbench package with [uv](https://docs.astral.sh/uv/):
 
 ```bash
     git clone https://github.com/LucaVignati/plc-testbench.git
     cd plc-testbench
-    pip install -r requirements.txt
-    pip install .
+    uv sync --all-groups
     cd ..
 ```
+
+`uv sync --all-groups` creates a local virtual environment (`.venv`) and installs the full runtime dependency set plus the notebook and test groups, using the versions pinned in `uv.lock`. To run commands inside that environment use `uv run <command>`. Note that the optional native extras (essentia, burg-plc) are only installed on the platforms they support.
 
 If you want to use it inside Jupyter Notebook you also need to install the ipywidgets package:
 ```bash
@@ -88,6 +89,37 @@ If you want to use the HumanCalculator metric, you also need to install webMUSHR
     pip install -e pymushra
     cd ..
 ```
+
+### Running the tests
+
+The test suite is made of **unit tests only**: it exercises the loss simulators, the PLC algorithms, the objective metrics, the crossfades and the DSP building blocks on seeded, in-memory mock inputs. No database, network access or external binary (such as `peaq`) is required.
+
+Create the test environment with uv (installs the package plus the `test` dependency group):
+
+```bash
+    uv sync --group test
+```
+
+Run the whole suite:
+
+```bash
+    uv run pytest test -q
+```
+
+Run a single module or a single test:
+
+```bash
+    uv run pytest test/test_loss_simulators.py -q
+    uv run pytest test/test_plc_algorithms.py::test_zeros_plc_zeroes_exactly_the_lost_packet -q
+```
+
+Notes:
+
+- Every test is deterministic: random inputs come from fixed seeds, so any failure is reproducible.
+- Platform-gated tests skip automatically when a native dependency is unavailable (for example `BurgPLC` and `ExternalPLC`, which need `burg-python-bindings` and `cpp_plc_template`).
+- The PEAQ, PESQ, PLCMOS and MUSHRA metrics are deliberately not covered by the unit tests: they require external programs or a full listening test.
+- CI installs a lean, platform-independent environment instead (`uv pip install -e . --no-deps` plus `requirements-test.txt`) because the full `uv sync` would also build the Linux-only `burg-plc` git dependency. The suite is identical in both cases.
+- The same suite runs on every push to the `public` branch through the [`Tests`](.github/workflows/tests.yml) GitHub Actions workflow.
 
 ## Basic Usage
 
@@ -242,6 +274,51 @@ The `band_settings` parameter is a dictionary that maps the name of the channel 
 If L/R or M/S channels require different PLC algorithms, the `channel_link` parameter needs to be set to `False` and the related settings need to be specified in the `band_settings` parameter using the `left` and `right` or `mid` and `side` keys.
 
 Alternatively, if the same PLC algorithms need to be applied to both channels (regardless of the L/R or M/S coding), the `channel_link` parameter needs to be set to `True` and the related settings need to be specified in the `band_settings` parameter using the `linked` key.
+
+### Deep-learning models (ONNX)
+
+The deep-learning PLC algorithms (`VermaPLC` and `PARCnetPLC`) run on **ONNX Runtime** (CPU); TensorFlow and PyTorch are not required at runtime. The pre-trained models live in `dl_models/`:
+
+| Algorithm | Model | Notes |
+| --- | --- | --- |
+| `VermaPLC` | `model_bs256_100epochs_0.01_1e-3_1e-7.onnx` | Exported from the original Keras model with `tf2onnx`. Two inputs: `cnn_input`, the mel spectrogram `(1, 100, 200, 1)`, and `concat_input`, the last packet `(1, 128)`. |
+| `PARCnetPLC` | `parcnet-is2_mplc_challenge.onnx` | Exported from the original TorchScript checkpoint with `torch.onnx.export`. Single input: `nn_context` `(1, 1, 2560)`. |
+
+The models are pre-converted and committed, so no conversion step is needed to run the testbench (`PLCMOSEstimator` already used ONNX). The conversion itself was a one-off operation; no converter is shipped with the repository. It was performed in an isolated environment (TensorFlow 2.15 + `tf2onnx` for Verma, PyTorch for PARCnet):
+
+```python
+# Verma: from the original Keras model (legacy environments, Keras 2.x)
+import keras, tensorflow as tf, tf2onnx
+model = keras.models.load_model("dl_models/model_bs256_100epochs_0.01_1e-3_1e-7.h5")
+spec = [
+    tf.TensorSpec([None, 100, 200, 1], tf.float32, name="cnn_input"),
+    tf.TensorSpec([None, 128], tf.float32, name="concat_input"),
+]
+tf2onnx.convert.from_keras(
+    model, input_signature=spec,
+    output_path="dl_models/model_bs256_100epochs_0.01_1e-3_1e-7.onnx",
+)
+
+# PARCnet: from the original TorchScript checkpoint
+import torch
+module = torch.jit.load("dl_models/parcnet-is2_mplc_challenge.pth", map_location="cpu").eval()
+torch.onnx.export(
+    module, (torch.randn(1, 1, 2560),),
+    "dl_models/parcnet-is2_mplc_challenge.onnx",
+    input_names=["nn_context"], output_names=["nn_pred"],
+    opset_version=17, dynamo=False,
+)
+```
+
+`VermaPLC` expects the packet size used by its exported model (**128** samples) and a mel spectrogram of `(100, 200, 1)`. Changing `packet_size`, `fs_dl`, `context_length`, `hop_size`, `window_length` or `num_mel_bins` raises a descriptive error unless the model is re-exported accordingly.
+
+A basic smoke/parity script exercising both models is available:
+
+```bash
+python -m test.test_onnx_plc
+```
+
+It compares each ONNX model against golden outputs captured from the original frameworks (`test/fixtures/*.npz`) before they were removed, and runs both `VermaPLC` and `PARCnetPLC` end-to-end on synthetic audio.
 
 ## User Interface
 This user interface is an ongoing thesis project carried out by Stefano Dallona under the supervision of Luca Vignati.

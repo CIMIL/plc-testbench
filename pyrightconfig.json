@@ -1,0 +1,9 @@
+{
+  "venvPath": ".",
+  "venv": ".venv",
+  "extraPaths": ["."],
+  "pythonVersion": "3.11",
+  "include": ["plctestbench", "test"],
+  "exclude": ["**/__pycache__", ".venv", "build", "dist"],
+  "ignore": ["plctestbench"]
+}
