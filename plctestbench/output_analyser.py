@@ -3,13 +3,7 @@ import subprocess
 import numpy as np
 import numpy.random as npr
 import soundfile as sf
-
-# TEMP
-# TODO REMOVE
-try:
-    from pesqc2 import pesq
-except ImportError:
-    pesq = None
+from pesqc2 import pesq
 
 from .file_wrapper import AudioFile, DataFile, PEAQData, SimpleCalculatorData
 from .listening_tests import ListeningTest
@@ -44,8 +38,13 @@ def normalise(x, amp_scale=1.0):
 
 
 class OutputAnalyser(Worker):
+    """Base class for output analysers."""
 
     def __init__(self, settings: Settings) -> None:
+        """Initialize state shared by output analysers.
+
+        Concrete analysers document their supported configuration parameters.
+        """
         super().__init__(settings)
 
 
@@ -56,17 +55,15 @@ class SimpleCalculator(OutputAnalyser):
         original_track_node: AudioFile,
         reconstructed_track_node: AudioFile,
     ) -> SimpleCalculatorData:
-        """
-        Calculation of Mean Square Error between the reference and signal
-        under test.
+        """Normalize, window, and frame two audio tracks.
 
-            Input:
-                ref_signal: original N-length signal array.
-                reconstructed_signal: N-length test signal array.
+        Args:
+            original_track_node: Original reference track.
+            reconstructed_track_node: Reconstructed track under test.
 
-            Output:
-                x_rw: N-length array of windowed reference signal frames.
-                x_ew: N-length array of windowed test signal frames.
+        Returns:
+            (tuple[np.ndarray, np.ndarray]): The windowed reference frames and
+                reconstructed frames.
         """
         amp_scale = self.settings.get("amp_scale")
         N = self.settings.get("N")
@@ -94,11 +91,18 @@ class SimpleCalculator(OutputAnalyser):
 
 
 class MSECalculator(SimpleCalculator):
-    """
-    MSECalculator is ...
-    """
+    """Calculate the windowed mean squared error between two audio tracks."""
 
     def __init__(self, settings: MSECalculatorSettings):
+        """Initialize a mean squared error calculator.
+
+        Parameters:
+            N (int): Analysis-window length in samples. Defaults to ``1024``.
+            hop (int | None): Number of samples between adjacent windows.
+                Defaults to half of ``N`` when ``None``.
+            amp_scale (float): Scale applied when normalizing each track.
+                Defaults to ``1.0``.
+        """
         super().__init__(settings)
 
     def run(
@@ -108,16 +112,16 @@ class MSECalculator(SimpleCalculator):
         lost_samples_idxs: DataFile = None,
         id: str = "",
     ):
-        """
-        Calculation of Mean Square Error between the reference and signal
-        under test.
+        """Calculate the mean squared error for each pair of frames.
 
-            Input:
-                ref_signal: original N-length signal array.
-                reconstructed_signal: N-length test signal array.
+        Args:
+            original_track_node: Original reference track.
+            reconstructed_track_node: Reconstructed track under test.
+            lost_samples_idxs: Unused loss-index data.
+            id: Identifier shown by the progress monitor.
 
-            Output:
-                error: Mean Square Error calculated calculated between the two signals.
+        Returns:
+            (SimpleCalculatorData): Windowed mean squared error values.
         """
         x_rw, x_ew = super().run(original_track_node, reconstructed_track_node)
         error = [
@@ -128,11 +132,18 @@ class MSECalculator(SimpleCalculator):
 
 
 class MAECalculator(SimpleCalculator):
-    """
-    MAECalculator is ...
-    """
+    """Calculate the windowed mean absolute error between two audio tracks."""
 
     def __init__(self, settings: MAECalculatorSettings):
+        """Initialize a mean absolute error calculator.
+
+        Parameters:
+            N (int): Analysis-window length in samples. Defaults to ``1024``.
+            hop (int | None): Number of samples between adjacent windows.
+                Defaults to half of ``N`` when ``None``.
+            amp_scale (float): Scale applied when normalizing each track.
+                Defaults to ``1.0``.
+        """
         super().__init__(settings)
 
     def run(
@@ -142,16 +153,16 @@ class MAECalculator(SimpleCalculator):
         lost_samples_idxs: DataFile = None,
         id: str = "",
     ):
-        """
-        Calculation of Mean Absolute Error between the reference and signal
-        under test.
+        """Calculate the mean absolute error for each pair of frames.
 
-            Input:
-                ref_signal: original N-length signal array.
-                reconstructed_signal: N-length test signal array.
+        Args:
+            original_track_node: Original reference track.
+            reconstructed_track_node: Reconstructed track under test.
+            lost_samples_idxs: Unused loss-index data.
+            id: Identifier shown by the progress monitor.
 
-            Output:
-                error: Mean Absolute Error calculated calculated between the two signals.
+        Returns:
+            (SimpleCalculatorData): Windowed mean absolute error values.
         """
         x_rw, x_ew = super().run(original_track_node, reconstructed_track_node)
         error = [
@@ -162,11 +173,19 @@ class MAECalculator(SimpleCalculator):
 
 
 class SpectralEnergyCalculator(OutputAnalyser):
-    """
-    SpectralEnergyCalculator is ...
-    """
+    """Calculate the quared error between the magnitude spectra
+    of reconstructed and reference tracks."""
 
     def __init__(self, settings: SpectralEnergyCalculatorSettings):
+        """Initialize a spectral-energy calculator.
+
+        Parameters:
+            N (int): DFT window length in samples. Defaults to ``1024``.
+            hop (int | None): Number of samples between adjacent windows.
+                Defaults to half of ``N`` when ``None``.
+            amp_scale (float): Scale applied when normalizing each track.
+                Defaults to ``1.0``.
+        """
         super().__init__(settings)
 
     def run(
@@ -176,17 +195,17 @@ class SpectralEnergyCalculator(OutputAnalyser):
         lost_samples_idxs: DataFile = None,
         id: str = "",
     ):
-        """
-        Calculate a difference magnitude signal from the DFT energies of the
-        reference and signal under test.
+        """Calculate short-time spectral differences between two tracks.
 
-            Input:
-                ref_signal: original N-length signal array.
-                reconstructed_signal: N-length test signal array.
+        Args:
+            original_track_node: Original reference track.
+            reconstructed_track_node: Reconstructed track under test.
+            lost_samples_idxs: Unused loss-index data.
+            id: Identifier shown by the progress monitor.
 
-            Output:
-                se: Difference Magnitude signal array calulated from the
-                Short-Time spectral differences between the reference and test.
+        Returns:
+            (SimpleCalculatorData): The spectral-energy difference for each
+                analysis frame.
         """
         amp_scale = self.settings.get("amp_scale")
         N = self.settings.get("N")
@@ -223,11 +242,16 @@ class SpectralEnergyCalculator(OutputAnalyser):
 
 
 class PEAQCalculator(OutputAnalyser):
-    """
-    PEAQCalculator is ...
-    """
+    """Calculate whole-track PEAQ objective quality metrics.
+    The underlying PEAQ implementation is [GstPEAQ](https://github.com/HSU-ANT/gstpeaq)."""
 
     def __init__(self, settings: PEAQCalculatorSettings) -> None:
+        """Initialize a PEAQ calculator.
+
+        Parameters:
+            peaq_mode (str): PEAQ processing mode: ``"basic"`` or
+                ``"advanced"``. Defaults to ``"basic"``.
+        """
         super().__init__(settings)
 
     def run(
@@ -237,6 +261,12 @@ class PEAQCalculator(OutputAnalyser):
         lost_samples_idxs: DataFile = None,
         id: str = "",
     ) -> PEAQData:
+        """Calculate whole-track PEAQ metrics.
+
+        Returns:
+            (PEAQData | None): The objective difference grade and distortion
+                index, or ``None`` when GstPEAQ returns invalid output.
+        """
         peaq_mode: PEAQMode = self.settings.get("peaq_mode")
         if peaq_mode == PEAQMode.basic:
             mode_flag = "--basic"
@@ -295,11 +325,18 @@ class PEAQCalculator(OutputAnalyser):
 
 
 class WindowedPEAQCalculator(OutputAnalyser):
-    """
-    WindowedPEAQCalculator is ...
-    """
+    """Calculate packet-aligned PEAQ scores around individual losses.
+    The underlying PEAQ implementation is [GstPEAQ](https://github.com/HSU-ANT/gstpeaq)."""
 
     def __init__(self, settings: WindowedPEAQCalculatorSettings) -> None:
+        """Initialize a windowed PEAQ calculator.
+
+        Parameters:
+            peaq_mode (str): PEAQ processing mode: ``"basic"`` or
+                ``"advanced"``. Defaults to ``"basic"``.
+            intorno_length (int): Duration of each loss-centered analysis
+                region in milliseconds. Defaults to ``300``.
+        """
         super().__init__(settings)
         self.fs = self.settings.get("fs")
         self.packet_size = self.settings.get("packet_size")
@@ -320,6 +357,11 @@ class WindowedPEAQCalculator(OutputAnalyser):
         lost_samples_idxs_data: DataFile = None,
         id: str = "",
     ) -> SimpleCalculatorData:
+        """Calculate PEAQ scores around packet-loss events.
+
+        Returns:
+            (SimpleCalculatorData): Packet-aligned PEAQ metric values.
+        """
         path = original_track_node.get_path()
         new_path = path[:-4] + "_norm" + path[-4:]
         new_data = normalise(original_track_node.get_data())
@@ -410,38 +452,40 @@ class WindowedPEAQCalculator(OutputAnalyser):
 
 
 class PerceptualCalculator(OutputAnalyser):
-    """Implementation of https://aes2.org/publications/elibrary-page/?id=23028
+    """Calculate the perceived audibility of packet-loss glitches.
 
-    This class implements an objective evaluation method inspired by
-    psychoacoustic principles and based on a constant-Q time–frequency
-    representation. The metric is designed to quantify the perceived
-    audibility of glitches introduced by packet loss (e.g., zeroed segments)
-    by comparing original and reconstructed audio in localized regions
-    ("intorni") around loss events.
-
+    This objective metric uses a constant-Q time-frequency representation to
+    compare original and reconstructed audio near packet-loss events. It is
+    the official implementation of the method described in
+    [this work](https://aes2.org/publications/elibrary-page/?id=23028).
 
     Processing pipeline:
-    - Extracts time-localized segments around packet loss indices from both
-      original and reconstructed signals.
-    - Computes constant-Q spectrogram representations for each segment pair.
-    - Applies a perceptual metric to estimate glitch audibility per event.
-    - Aggregates results into a packet-aligned metric vector.
 
-    The implementation follows the methodology proposed in the referenced
-    paper, which demonstrates improved correlation with human subjective
-    evaluations of glitch audibility compared to standard objective metrics.
-
-    Args:
-        settings (PerceptualCalculatorSettings): Configuration parameters
-            including sampling rate, packet size, analysis window length,
-            and constant-Q transform settings.
-
-    Output:
-        A ``SimpleCalculatorData`` vector containing perceptual metric values
-        aligned with packet indices.
+    - Extract loss-centered regions from the original and reconstructed audio.
+    - Compute a constant-Q spectrogram for each pair of regions.
+    - Estimate the perceptual audibility of each glitch.
+    - Store the results in a packet-aligned metric vector.
     """
 
     def __init__(self, settings: PerceptualCalculatorSettings) -> None:
+        """Initialize a perceptual glitch-audibility calculator.
+
+        Parameters:
+            intorno_length (int): Duration of each loss-centered analysis
+                region in milliseconds. Defaults to ``300``.
+            linear_mag (bool): Whether to use linear magnitudes. Defaults to
+                ``False``.
+            min_frequency (float): Lowest analyzed frequency in hertz.
+                Defaults to ``32.7``.
+            max_frequency (float): Highest analyzed frequency in hertz.
+                Defaults to ``20000``.
+            bins_per_octave (int): Number of constant-Q bins per octave.
+                Defaults to ``12``.
+            n_bins (int): Total number of constant-Q frequency bins. Defaults
+                to ``100``.
+            minimum_window (int): Minimum transform-window length in samples.
+                Defaults to ``128``.
+        """
         super().__init__(settings)
         self.fs = self.settings.get("fs")
         self.packet_size = self.settings.get("packet_size")
@@ -459,6 +503,11 @@ class PerceptualCalculator(OutputAnalyser):
         lost_samples_idxs_data: DataFile = None,
         id: str = "",
     ) -> SimpleCalculatorData:
+        """Calculate perceptual scores around packet-loss events.
+
+        Returns:
+            (SimpleCalculatorData): Packet-aligned perceptual metric values.
+        """
         lost_samples_idxs = lost_samples_idxs_data.get_data()
         intorni_original = extract_intorni(
             original_track_node,
@@ -505,11 +554,26 @@ class PerceptualCalculator(OutputAnalyser):
 
 
 class HumanCalculator(OutputAnalyser):
-    """
-    ListeningTest is ...
-    """
+    """Generate and run a human listening test for packet-loss events."""
 
     def __init__(self, settings: HumanCalculatorSettings) -> None:
+        """Initialize a human listening-test calculator.
+
+        Parameters:
+            stimulus_length (int): Stimulus duration in milliseconds. Defaults
+                to ``3000``.
+            single_loss_per_stimulus (bool): Whether each stimulus may contain
+                only one loss event. Defaults to ``True``.
+            stimuli_per_page (int): Number of stimuli shown on each page.
+                Defaults to ``10``.
+            pages (int): Number of listening-test pages. Defaults to ``2``.
+            iterations (int): Number of test iterations. Defaults to ``1``.
+            choose_seed (int): Seed used to select stimuli. Defaults to ``1``.
+            reference (str | None): Optional reference-track path. Defaults to
+                ``None``.
+            anchor (str | None): Optional anchor-track path. Defaults to
+                ``None``.
+        """
         super().__init__(settings)
         self.fs = self.settings.get("fs")
         self.packet_size = self.settings.get("packet_size")
@@ -528,6 +592,11 @@ class HumanCalculator(OutputAnalyser):
         lost_samples_idxs_data: DataFile = None,
         id: str = "",
     ):
+        """Run the listening test and collect its scores.
+
+        Returns:
+            (SimpleCalculatorData): Packet-aligned mean listening-test scores.
+        """
 
         def transpose(matrix):
             return [
@@ -632,11 +701,20 @@ class HumanCalculator(OutputAnalyser):
 
 
 class PLCMOSCalculator(OutputAnalyser):
-    """
-    PLCMOSCalculator is ...
-    """
+    """Estimate perceptual quality with the PLCMOS.
+    Implementation is taken from the [official repo](https://github.com/microsoft/PLC-Challenge/tree/main/PLCMOS)."""
 
     def __init__(self, settings: PLCMOSCalculatorSettings) -> None:
+        """Initialize a PLCMOS calculator.
+
+        Parameters:
+            plcmos_model (str): PLCMOS model version. Supported values are
+                ``"0"``, ``"0alpha"``, ``"2-val"``, and ``"2"``. Defaults
+                to ``"2"``.
+            request_intrusive (bool): Whether model version ``"0"`` should use
+                the original track as an intrusive reference. Defaults to
+                ``True``.
+        """
         super().__init__(settings)
 
     def run(
@@ -646,6 +724,11 @@ class PLCMOSCalculator(OutputAnalyser):
         lost_samples_idxs: DataFile = None,
         id: str = "",
     ) -> SimpleCalculatorData:
+        """Calculate the channel-averaged PLCMOS score.
+
+        Returns:
+            (SimpleCalculatorData): The channel-averaged PLCMOS score.
+        """
         plcmos_model: PLCMOSModel = self.settings.get("plcmos_model")
         request_intrusive: PLCMOSModel = self.settings.get("request_intrusive")
 
@@ -684,11 +767,18 @@ class PLCMOSCalculator(OutputAnalyser):
 
 
 class PESQCalculator(OutputAnalyser):
-    """
-    PESQCalculator is ...
-    """
+    """Calculate a whole-track PESQ quality score. Implementation is
+    taken from `pesqc2`, which implements wideband PESQ according to the
+    P.862.2 with Corrigendum 2 specification"""
 
     def __init__(self, settings: PESQCalculatorSettings) -> None:
+        """Initialize a PESQ calculator.
+
+        Parameters:
+            pesq_mode (PESQMode): PESQ bandwidth mode. Use ``PESQMode.wb``
+                for wideband or ``PESQMode.nb`` for narrowband. Defaults to
+                ``PESQMode.wb``.
+        """
         super().__init__(settings)
 
     def run(
@@ -698,6 +788,11 @@ class PESQCalculator(OutputAnalyser):
         lost_samples_idxs: DataFile = None,
         id: str = "",
     ) -> SimpleCalculatorData:
+        """Calculate the PESQ score after resampling and downmixing.
+
+        Returns:
+            (SimpleCalculatorData): The whole-track PESQ score.
+        """
         pesq_mode: PESQMode = self.settings.get("pesq_mode")
 
         # Resample to 16 KHz
