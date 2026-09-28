@@ -36,6 +36,7 @@ dependencies = [
     "scipy==1.14.1",
     "pandas>=2.2.3,<3.0.0",
     "onnxruntime==1.27.0",
+    "pesqc2==0.0.4",
 ]
 
 [project.optional-dependencies]

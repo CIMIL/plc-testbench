@@ -916,6 +916,15 @@ wheels = [
 ]
 
 [[package]]
+name = "pesqc2"
+version = "0.0.4"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "numpy" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/85/ec/a6a9bf98fbdf686d5ccecee2ddfc35302811cae69d9126cf24383be21701/pesqc2-0.0.4.tar.gz", hash = "sha256:654771b5ed58bac0d167f98fa52728f295bd972f905353e223957551ccb301b2", size = 41292, upload-time = "2025-05-14T14:05:03.54Z" }
+
+[[package]]
 name = "pexpect"
 version = "4.9.0"
 source = { registry = "https://pypi.org/simple" }
@@ -971,6 +980,7 @@ dependencies = [
     { name = "numpy" },
     { name = "onnxruntime" },
     { name = "pandas" },
+    { name = "pesqc2" },
     { name = "pymongo" },
     { name = "pyyaml" },
     { name = "ruamel-yaml" },
@@ -1011,6 +1021,7 @@ requires-dist = [
     { name = "numpy", specifier = "==1.26.0" },
     { name = "onnxruntime", specifier = "==1.27.0" },
     { name = "pandas", specifier = ">=2.2.3,<3.0.0" },
+    { name = "pesqc2", specifier = "==0.0.4" },
     { name = "pymongo", specifier = "==4.10.1" },
     { name = "pyyaml", specifier = "==6.0.3" },
     { name = "ruamel-yaml", specifier = "==0.18.6" },
