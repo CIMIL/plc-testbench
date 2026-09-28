@@ -8,6 +8,7 @@ nav:
   - Introduction: index.md
   - Guides:
       - Configuration: guides/configuration.md
+      - Custom PLC plugins: guides/custom-plugins.md
       - Advanced PLC: guides/advanced-plc.md
       - Models and metrics: guides/models-and-metrics.md
       - Serving in an application: guides/serving.md

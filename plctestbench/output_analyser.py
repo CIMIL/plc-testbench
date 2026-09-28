@@ -96,7 +96,7 @@ class MSECalculator(SimpleCalculator):
     def __init__(self, settings: MSECalculatorSettings):
         """Initialize a mean squared error calculator.
 
-        Parameters:
+        Module parameters:
             N (int): Analysis-window length in samples. Defaults to ``1024``.
             hop (int | None): Number of samples between adjacent windows.
                 Defaults to half of ``N`` when ``None``.
@@ -137,7 +137,7 @@ class MAECalculator(SimpleCalculator):
     def __init__(self, settings: MAECalculatorSettings):
         """Initialize a mean absolute error calculator.
 
-        Parameters:
+        Module parameters:
             N (int): Analysis-window length in samples. Defaults to ``1024``.
             hop (int | None): Number of samples between adjacent windows.
                 Defaults to half of ``N`` when ``None``.
@@ -179,7 +179,7 @@ class SpectralEnergyCalculator(OutputAnalyser):
     def __init__(self, settings: SpectralEnergyCalculatorSettings):
         """Initialize a spectral-energy calculator.
 
-        Parameters:
+        Module parameters:
             N (int): DFT window length in samples. Defaults to ``1024``.
             hop (int | None): Number of samples between adjacent windows.
                 Defaults to half of ``N`` when ``None``.
@@ -248,7 +248,7 @@ class PEAQCalculator(OutputAnalyser):
     def __init__(self, settings: PEAQCalculatorSettings) -> None:
         """Initialize a PEAQ calculator.
 
-        Parameters:
+        Module parameters:
             peaq_mode (str): PEAQ processing mode: ``"basic"`` or
                 ``"advanced"``. Defaults to ``"basic"``.
         """
@@ -331,7 +331,7 @@ class WindowedPEAQCalculator(OutputAnalyser):
     def __init__(self, settings: WindowedPEAQCalculatorSettings) -> None:
         """Initialize a windowed PEAQ calculator.
 
-        Parameters:
+        Module parameters:
             peaq_mode (str): PEAQ processing mode: ``"basic"`` or
                 ``"advanced"``. Defaults to ``"basic"``.
             intorno_length (int): Duration of each loss-centered analysis
@@ -470,7 +470,7 @@ class PerceptualCalculator(OutputAnalyser):
     def __init__(self, settings: PerceptualCalculatorSettings) -> None:
         """Initialize a perceptual glitch-audibility calculator.
 
-        Parameters:
+        Module parameters:
             intorno_length (int): Duration of each loss-centered analysis
                 region in milliseconds. Defaults to ``300``.
             linear_mag (bool): Whether to use linear magnitudes. Defaults to
@@ -559,7 +559,7 @@ class HumanCalculator(OutputAnalyser):
     def __init__(self, settings: HumanCalculatorSettings) -> None:
         """Initialize a human listening-test calculator.
 
-        Parameters:
+        Module parameters:
             stimulus_length (int): Stimulus duration in milliseconds. Defaults
                 to ``3000``.
             single_loss_per_stimulus (bool): Whether each stimulus may contain
@@ -707,7 +707,7 @@ class PLCMOSCalculator(OutputAnalyser):
     def __init__(self, settings: PLCMOSCalculatorSettings) -> None:
         """Initialize a PLCMOS calculator.
 
-        Parameters:
+        Module parameters:
             plcmos_model (str): PLCMOS model version. Supported values are
                 ``"0"``, ``"0alpha"``, ``"2-val"``, and ``"2"``. Defaults
                 to ``"2"``.
@@ -774,7 +774,7 @@ class PESQCalculator(OutputAnalyser):
     def __init__(self, settings: PESQCalculatorSettings) -> None:
         """Initialize a PESQ calculator.
 
-        Parameters:
+        Module parameters:
             pesq_mode (PESQMode): PESQ bandwidth mode. Use ``PESQMode.wb``
                 for wideband or ``PESQMode.nb`` for narrowband. Defaults to
                 ``PESQMode.wb``.

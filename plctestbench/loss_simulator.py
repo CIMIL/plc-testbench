@@ -73,7 +73,7 @@ class BinomialPLS(PacketLossSimulator):
     def __init__(self, settings: BinomialPLSSettings) -> None:
         """Initialize a binomial packet-loss simulator.
 
-        Parameters:
+        Module parameters:
             seed (int): Seed for the random number generator. Defaults to
                 ``1``.
             packet_size (int): Number of audio samples in each packet.
@@ -118,7 +118,7 @@ class MetronomePLS(PacketLossSimulator):
     def __init__(self, settings: MetronomePLSSettings) -> None:
         """Initialize a metronome packet-loss simulator.
 
-        Parameters:
+        Module parameters:
             seed (int): Seed reserved for consistency with other packet-loss
                 simulators. Defaults to ``1``.
             packet_size (int): Number of audio samples in each packet.
@@ -160,7 +160,7 @@ class GilbertElliotPLS(PacketLossSimulator):
     def __init__(self, settings: GilbertElliotPLSSettings) -> None:
         """Initialize a Gilbert--Elliott packet-loss simulator.
 
-        Parameters:
+        Module parameters:
             seed (int): Seed for the random number generator. Defaults to
                 ``1``.
             packet_size (int): Number of audio samples in each packet.
@@ -226,7 +226,7 @@ class CustomMaskPLS(PacketLossSimulator):
     def __init__(self, settings: CustomMaskPLSSettings):
         """Initialize a custom-mask packet-loss simulator.
 
-        Parameters:
+        Module parameters:
             seed (int): Seed reserved for consistency with other packet-loss
                 simulators. Defaults to ``1``.
             packet_size (int): Number of audio samples in each packet.
