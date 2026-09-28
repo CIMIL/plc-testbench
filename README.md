@@ -121,6 +121,20 @@ Notes:
 - CI installs a lean, platform-independent environment instead (`uv pip install -e . --no-deps` plus `requirements-test.txt`) because the full `uv sync` would also build the Linux-only `burg-plc` git dependency. The suite is identical in both cases.
 - The same suite runs on every push to the `public` branch through the [`Tests`](.github/workflows/tests.yml) GitHub Actions workflow.
 
+## Documentation
+
+A Material-based documentation site combines authored guides with API pages generated from the package docstrings. Install the optional documentation dependencies, then build or preview it locally:
+
+```bash
+pip install "plctestbench[docs]"
+plctestbench-docs build site --strict
+plctestbench-docs serve
+```
+
+The default `standalone` profile includes the package introduction, getting-started pages, and repository links. Applications can instead build the integration-focused profile with `plctestbench-docs build site --profile embedded`; it uses a separate embedded introduction and omits standalone-only content and repository actions.
+
+The built `site/` directory is self-contained and can be mounted by a backend application. From Python, call `plctestbench.docs.build_docs("/path/to/site", profile="embedded")` and serve the returned directory with the host framework's static-file support. See the generated **Serving in an application** guide for FastAPI/Starlette and Flask examples.
+
 ## Basic Usage
 
 The file `plctestbench.ipynb` contains a Jupyter Notebook with a basic example of how to use the tool.

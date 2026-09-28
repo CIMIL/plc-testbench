@@ -38,6 +38,16 @@ dependencies = [
     "onnxruntime==1.27.0",
 ]
 
+[project.optional-dependencies]
+docs = [
+    "mkdocs-material>=9.6,<10",
+    "mkdocstrings[python]>=0.29,<1",
+    "mkdocs-gen-files>=0.5,<1",
+]
+
+[project.scripts]
+plctestbench-docs = "plctestbench.docs:main"
+
 [dependency-groups]
 notebook = [
     "ipywidgets>=8.1.5,<9.0.0",
@@ -51,6 +61,10 @@ test = [
 
 [tool.hatch.build.targets.wheel]
 packages = ["plctestbench"]
+include = ["plctestbench/_docs/**"]
+
+[tool.hatch.build.targets.sdist]
+include = ["plctestbench/_docs/**"]
 
 # burg-plc is declared as a git dependency (Linux-only).
 [tool.hatch.metadata]

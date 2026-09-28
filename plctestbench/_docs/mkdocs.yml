@@ -1,0 +1,83 @@
+site_name: PLCTestbench
+site_description: Packet-loss concealment benchmarking documentation
+repo_url: https://github.com/LucaVignati/plc-testbench
+repo_name: LucaVignati/plc-testbench
+docs_dir: content
+site_dir: ../../site
+
+nav:
+  - Introduction: index.md
+  - Getting started:
+      - Installation: getting-started/installation.md
+      - Quickstart: getting-started/quickstart.md
+  - Guides:
+      - Configuration: guides/configuration.md
+      - Advanced PLC: guides/advanced-plc.md
+      - Models and metrics: guides/models-and-metrics.md
+      - Serving in an application: guides/serving.md
+  - API reference: reference/index.md
+
+theme:
+  name: material
+  language: en
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.top
+    - content.code.copy
+    - content.action.edit
+    - search.suggest
+    - search.highlight
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: teal
+      accent: green
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: teal
+      accent: green
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+
+plugins:
+  - search
+  - gen-files:
+      scripts:
+        - gen_ref_pages.py
+  - mkdocstrings:
+      handlers:
+        python:
+          paths: [../..]
+          options:
+            show_source: false
+            show_signature_annotations: true
+            separate_signature: true
+            members_order: source
+            show_root_heading: true
+            show_root_full_path: false
+            show_object_full_path: false
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - pymdownx.details
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.superfences
+  - toc:
+      permalink: true
+
+extra_css:
+  - stylesheets/extra.css
+extra_javascript:
+  - https://unpkg.com/mermaid@10/dist/mermaid.min.js
+  - javascripts/mermaid.js
+  - javascripts/platform-integration.js

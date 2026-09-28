@@ -242,7 +242,7 @@ def trailing_silence(audio, fs, silence_time) -> np.ndarray:
     return np.concatenate((audio, silence), axis=0)
 
 
-def is_loud_enough(audio_data, audio_reference, threshold=-30):
+def is_loud_enough(audio_data, audio_reference, threshold=-30) -> bool:
     """
     Determines if the average loudness of the audio data is above a specified threshold.
 

@@ -8,8 +8,8 @@ import soundfile as sf
 # TODO REMOVE
 try:
     from pesqc2 import pesq
-except:
-    pass
+except ImportError:
+    pesq = None
 
 from .file_wrapper import AudioFile, DataFile, PEAQData, SimpleCalculatorData
 from .listening_tests import ListeningTest
@@ -283,9 +283,12 @@ class PEAQCalculator(OutputAnalyser):
             peaq_odg, peaq_di = peaq_output.split("\n", 1)
             _, peaq_odg = peaq_odg.split(peaq_odg_text)
             _, peaq_di = peaq_di.split(peaq_di_text)
-            peaq_odg = float(peaq_odg)
-            peaq_di = float(peaq_di)
-            return PEAQData(peaq_odg, peaq_di)
+            try:
+                return PEAQData(float(peaq_odg), float(peaq_di))
+            except ValueError:
+                print("The peaq program returned invalid metric values:")
+                print(completed_process.stdout)
+                return None
 
         print("The peaq program exited with the following errors:")
         print(completed_process.stdout)
@@ -391,7 +394,11 @@ class WindowedPEAQCalculator(OutputAnalyser):
                 peaq_odg, peaq_di = peaq_output.split("\n", 1)
                 _, peaq_odg = peaq_odg.split(peaq_odg_text)
                 _, peaq_di = peaq_di.split(peaq_di_text)
-                metric[idx] = self.sign * float(peaq_odg)
+                try:
+                    metric[idx] = self.sign * float(peaq_odg)
+                except ValueError:
+                    print("The peaq program returned an invalid Objective Difference Grade:")
+                    print(completed_process.stdout)
             else:
                 print("The peaq program exited with the following errors:")
                 print(completed_process.stdout)
@@ -429,8 +436,8 @@ class PerceptualCalculator(OutputAnalyser):
             including sampling rate, packet size, analysis window length,
             and constant-Q transform settings.
 
-    Returns:
-        SimpleCalculatorData: A vector containing perceptual metric values
+    Output:
+        A ``SimpleCalculatorData`` vector containing perceptual metric values
         aligned with packet indices.
     """
 
@@ -451,7 +458,7 @@ class PerceptualCalculator(OutputAnalyser):
         reconstructed_track_node: AudioFile,
         lost_samples_idxs_data: DataFile = None,
         id: str = "",
-    ):
+    ) -> SimpleCalculatorData:
         lost_samples_idxs = lost_samples_idxs_data.get_data()
         intorni_original = extract_intorni(
             original_track_node,
@@ -616,7 +623,10 @@ class HumanCalculator(OutputAnalyser):
 
         metric = np.zeros(len(original_track_node.get_data()) // self.packet_size)
         for idx, mean, _ in self.progress_monitor(results, desc=f"{str(self)}|{id}"):
-            metric[int(idx.split("-")[-1])] = mean
+            try:
+                metric[int(idx.split("-")[-1])] = mean
+            except (IndexError, TypeError, ValueError):
+                print(f"Skipping listening-test result with invalid index: {idx!r}")
 
         return SimpleCalculatorData(metric)
 

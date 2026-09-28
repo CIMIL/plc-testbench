@@ -13,6 +13,39 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  documentation:
+    name: Documentation (Python 3.11)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.11"
+          enable-cache: true
+          cache-dependency-glob: requirements-docs.txt
+
+      - name: Install the package without optional native extras
+        run: |
+          uv pip install --system -e . --no-deps
+
+      - name: Install the pinned documentation dependencies
+        run: |
+          uv pip install --system -r requirements-docs.txt
+
+      - name: Build the documentation
+        run: |
+          plctestbench-docs build site --strict
+
+      - name: Upload documentation site
+        uses: actions/upload-artifact@v4
+        with:
+          name: plctestbench-docs
+          path: site/
+
   unit-tests:
     name: Unit tests (Python 3.11)
     runs-on: ubuntu-latest
