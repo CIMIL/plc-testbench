@@ -13,23 +13,34 @@ from .settings import (
 
 
 class PacketLossSimulator(Worker):
-    """
-    Base class for all the loss models.
+    """Base class for packet-loss models.
+
+    Subclasses implement
+    [`tick()`][plctestbench.loss_simulator.PacketLossSimulator.tick] to decide
+    whether each packet is lost. The
+    [`run()`][plctestbench.loss_simulator.PacketLossSimulator.run] method
+    expands that packet-level decision to every sample in the packet.
     """
 
     def __init__(self, settings: Settings) -> None:
-        """
-        Variables:
-            seed:   value to be used as a seed for the random number
-                    generator.
+        """Initialize the common packet-loss state.
+
+        Other Parameters:
+            seed (int): Seed used by simulators that generate random values.
+            packet_size (int): Number of audio samples in each packet.
         """
         super().__init__(settings)
         self.packet_size = settings.get("packet_size")
 
     def run(self, num_samples, id) -> np.ndarray:
-        """
-        This function computes and returns an array of indexes representing
-        the position of lost samples in the original audio track.
+        """Compute the positions of lost samples in an audio track.
+
+        Args:
+            num_samples (int): Total number of samples in the audio track.
+            id (str): Identifier shown by the progress monitor.
+
+        Returns:
+            A NumPy array containing the indices of all lost samples.
         """
         lost_samples_idx = []
         for idx in self.progress_monitor(range(num_samples), desc=f"{str(self)}|{id}"):
@@ -44,95 +55,80 @@ class PacketLossSimulator(Worker):
         return self.__class__.__name__ + "_s" + str(self.settings.get("seed"))
 
     def tick(self) -> bool:
-        """
-        Placeholder function to be implemented by the derived classes.
+        """Decide whether the current packet is lost.
+
+        Raises:
+            NotImplementedError: Always. Subclasses must implement this
+                method.
         """
         raise NotImplementedError
 
 
 class BinomialPLS(PacketLossSimulator):
     """
-    This class implements a binomial distribution to be used as a loss model
-    in packet/sample loss simulators.
+    Implements a binomial distribution (Bernoulli trials)
+    to be used as a loss model in packet/sample loss simulators.
     """
 
     def __init__(self, settings: BinomialPLSSettings) -> None:
-        """
-        Variables:
-            per:    the Packet Error Ratio is the ratio between the lost packets
-                    and the total number of packets.
+        """Initialize a binomial packet-loss simulator.
+
+        Parameters:
+            seed (int): Seed for the random number generator. Defaults to
+                ``1``.
+            packet_size (int): Number of audio samples in each packet.
+                Defaults to ``32``.
+            per (float): Packet error ratio, expressed as a probability in the
+                range ``[0, 1]``. Defaults to ``0.0001``.
         """
         super().__init__(settings)
         self.per = settings.get("per")
         npr.seed(self.settings.get("seed"))
 
     def tick(self) -> bool:
-        """
-        This function performs a Bernoulli trial and returns the result.
-        Output:
-            True if the packet has been lost
+        """Perform one Bernoulli trial.
+
+        Returns:
+            ``True`` if the current packet is lost; otherwise ``False``.
         """
         b_trial_result = npr.random() <= self.per
         return b_trial_result
 
 
 class MetronomePLS(PacketLossSimulator):
-    """
-    This class implements a deterministic and periodic
-    metronome packet loss model.
+    """Generate deterministic, periodic bursts of packet loss.
 
+    Each cycle contains ``period`` packets. The first ``duration`` packets are
+    lost and the remainder are received. A positive ``offset`` delays the
+    first burst. The simulator advances the cycle one packet at a time through
+    [`tick()`][plctestbench.loss_simulator.MetronomePLS.tick].
 
-    The model generates bursts of consecutive packet losses at regular
-    intervals. Each period defines a cycle in which a fixed number of
-    packets are dropped, followed by a sequence of correctly received
-    packets.
+    Examples:
+        With ``period=10``, ``duration=3``, and ``offset=0``::
 
-    The simulator operates on a per-packet basis (via `tick()`), maintaining
-    an internal counter that advances at each packet boundary.
+            Packet: 0 1 2 3 4 5 6 7 8 9 | 10 11 12 ...
+            State:  L L L R R R R R R R | L  L  L  ...
 
+        With ``period=10``, ``duration=3``, and ``offset=4``::
 
-    For each cycle:
-    - The cycle length is defined by `period`
-    - The first `duration` packets in the cycle are marked as lost
-    - The remaining packets in the cycle are received correctly
-
-
-    An optional `offset` allows delaying the start of the first loss burst,
-    effectively shifting the pattern in time.
-
-
-    Example (period=10, duration=3, offset=0):
-        Packet indices:   0 1 2 3 4 5 6 7 8 9 | 10 11 12 ...
-        Loss pattern:     L L L R R R R R R R | L  L  L ...
-
-
-    Example (period=10, duration=3, offset=4):
-        Packet indices:   0 1 2 3 4 5 6 7 8 9 | 10 11 ...
-        Loss pattern:     R R R R L L L R R R | R  L ...
-
-
+            Packet: 0 1 2 3 4 5 6 7 8 9 | 10 11 ...
+            State:  R R R R L L L R R R | R  L  ...
     """
 
     def __init__(self, settings: MetronomePLSSettings) -> None:
-        """
-        period : int
-            Length of the full cycle in packets (loss + no-loss).
-            Must be >= 1.
+        """Initialize a metronome packet-loss simulator.
 
-
-        duration : int
-            Number of consecutive packets lost at the start of each cycle.
-            Must satisfy 0 <= duration <= period.
-
-
-        offset : int
-            Initial shift (in packets) applied before the periodic pattern starts.
-            A positive offset delays the first loss burst.
-
-
-        counter : int
-            Internal state tracking the current position within the cycle.
-            Initialized as `-offset` to account for the initial delay.
+        Parameters:
+            seed (int): Seed reserved for consistency with other packet-loss
+                simulators. Defaults to ``1``.
+            packet_size (int): Number of audio samples in each packet.
+                Defaults to ``32``.
+            period (int): Length of a complete loss/no-loss cycle in packets.
+                Defaults to ``100``.
+            duration (int): Number of consecutive lost packets in each cycle.
+                Defaults to ``5``.
+            offset (int): Number of packets by which to delay the first loss
+                burst. Defaults to ``0``.
         """
         super().__init__(settings)
         self.period = settings.get("period")
@@ -141,14 +137,10 @@ class MetronomePLS(PacketLossSimulator):
         self.counter = -self.offset
 
     def tick(self) -> bool:
-        """
-        Advances the internal counter and determines whether the current
-        packet is lost.
+        """Advance the cycle and determine whether the current packet is lost.
 
-        Returns
-        -------
-        bool
-            True if the current packet is lost, False otherwise.
+        Returns:
+            ``True`` if the current packet is lost; otherwise ``False``.
         """
         self.counter += 1
         if self.counter == self.period:
@@ -159,24 +151,28 @@ class MetronomePLS(PacketLossSimulator):
 
 
 class GilbertElliotPLS(PacketLossSimulator):
-    """
-    This class implements the Gilbert-Elliott packet loss model.
+    """Simulate packet loss with the two-state Gilbert--Elliott model.
 
-
-    Adapted from:
-
-    https://github.com/mkalewski/sim2net/blob/master/sim2net/packet_loss/gilbert_elliott.py
-
-    (MIT licensed)
+    The implementation is adapted from the MIT-licensed
+    [sim2net implementation](https://github.com/mkalewski/sim2net/blob/master/sim2net/packet_loss/gilbert_elliott.py).
     """
 
     def __init__(self, settings: GilbertElliotPLSSettings) -> None:
-        """
-        Variables:
-            p: probability to transition from GOOD to BAD
-            r: probability to transition from BAD to GOOD
-            h: probability of a good packet in BAD state
-            k: probability of a good packet in a GOOD state
+        """Initialize a Gilbert--Elliott packet-loss simulator.
+
+        Parameters:
+            seed (int): Seed for the random number generator. Defaults to
+                ``1``.
+            packet_size (int): Number of audio samples in each packet.
+                Defaults to ``32``.
+            p (float): Probability of transitioning from the good state to the
+                bad state. Defaults to ``0.001``.
+            r (float): Probability of transitioning from the bad state to the
+                good state. Defaults to ``0.05``.
+            h (float): Probability of receiving a packet in the bad state.
+                Defaults to ``0.5``.
+            k (float): Probability of receiving a packet in the good state.
+                Defaults to ``0.999999``.
         """
         super().__init__(settings)
         npr.seed(self.settings.get("seed"))
@@ -195,12 +191,10 @@ class GilbertElliotPLS(PacketLossSimulator):
         self.current_state = self.state_g
 
     def tick(self) -> bool:
-        """
-        Returns information about whether a transmitted packet has been lost or
-        can be successfully received by destination node(s) according to the
-        Gilbert-Elliott packet loss model.
-        Output:
-            True if the packet has been lost
+        """Advance the model and determine whether the current packet is lost.
+
+        Returns:
+            ``True`` if the current packet is lost; otherwise ``False``.
         """
         transition = npr.random()
         if transition <= self.current_state[1]:
@@ -215,46 +209,44 @@ class GilbertElliotPLS(PacketLossSimulator):
 
 
 class CustomMaskPLS(PacketLossSimulator):
-    """
-    Packet loss simulator that uses a predefined binary mask to determine
-    which packets are considered lost.
+    """Apply a predefined binary packet-loss mask.
 
-    Each packet corresponds to one character in the mask string:
-    - `'1'` indicates a lost packet (by default).
-    - `'0'` indicates a successfully received packet.
-    This behavior can be inverted by setting `invert=True`.
+    Each character controls one packet: ``1`` marks a lost packet and ``0``
+    marks a received packet. Setting ``invert`` reverses those meanings. Once
+    the mask is exhausted, all subsequent packets are received.
 
-    The simulator increments an internal counter at every tick. When the
-    counter exceeds the length of the mask, no further packets are dropped
-    (i.e., all subsequent packets are considered received).
+    The mask length should normally equal ``num_samples / packet_size``.
 
-    It is recommended that the total number of packets ('#samples / packet_size')
-    match the length of the mask. If they differ, the simulator stops applying
-    the mask once the end is reached.
-
-    Attributes
-    ----------
-    mask : str
-        A string of '0' and '1' characters defining the drop pattern.
-    invert : bool
-        If True, inverts the meaning of mask values ('1' = not lost, '0' = lost).
-    counter : int
-        Internal counter tracking the current mask position.
-
-    Methods
-    -------
-    tick() -> bool
-        Returns True if the current packet should be considered lost,
-        False otherwise. Automatically advances the internal counter.
+    Attributes:
+        mask: Binary string defining the packet-loss pattern.
+        invert: Whether to invert the meaning of the mask values.
+        counter: Current position in the mask.
     """
 
     def __init__(self, settings: CustomMaskPLSSettings):
+        """Initialize a custom-mask packet-loss simulator.
+
+        Parameters:
+            seed (int): Seed reserved for consistency with other packet-loss
+                simulators. Defaults to ``1``.
+            packet_size (int): Number of audio samples in each packet.
+                Defaults to ``32``.
+            mask (str): String whose characters define the packet-loss pattern.
+                Defaults to ``"0"``.
+            invert (bool): Whether ``0`` represents loss and ``1`` represents
+                reception. Defaults to ``False``.
+        """
         super().__init__(settings)
         self.mask: str = settings.get("mask")
         self.invert: bool = settings.get("invert")
-        self.counter = 0
+        self.counter: int = 0
 
     def tick(self):
+        """Consume one mask value and determine whether the packet is lost.
+
+        Result:
+            ``True`` if the current packet is lost; otherwise ``False``.
+        """
         try:
             lost = bool(int(self.mask[self.counter]))
             lost = not lost if self.invert else lost
