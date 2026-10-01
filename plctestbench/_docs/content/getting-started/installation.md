@@ -3,7 +3,7 @@
 PLCTestbench supports Python **3.11**. [uv](https://docs.astral.sh/uv/) is the recommended development and installation workflow.
 
 ```bash
-git clone https://github.com/LucaVignati/plc-testbench.git
+git clone https://github.com/CIMIL/plc-testbench.git
 cd plc-testbench
 uv sync --all-groups
 ```
@@ -16,16 +16,9 @@ uv run pytest test -q
 
 ## Database
 
-A testbench run stores results in MongoDB by default. Start a local instance or configure a hosted MongoDB service before running an experiment:
+TinyDB is the default database backend and runs inside the Python process, so a standard local installation needs no database server or external application. MongoDB is also supported for deployments that need a separately managed database.
 
-```bash
-docker run -d -p 27017:27017 --name mongodb \
-  -e MONGO_INITDB_ROOT_USERNAME=myUserAdmin \
-  -e MONGO_INITDB_ROOT_PASSWORD=admin \
-  mongo:6.0.8
-```
-
-`TestbenchConfiguration` also exposes a TinyDB platform for configurations that do not use MongoDB.
+See [Configuration](../guides/configuration.md#database-backends) for how to choose and configure either backend. The [quickstart](quickstart.md) uses TinyDB and includes MongoDB setup as an appendix.
 
 ## Optional integrations
 

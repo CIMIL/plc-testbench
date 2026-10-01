@@ -14,19 +14,68 @@ plc_algorithms = [
 ]
 ```
 
-## Loss models
+## Database backends
 
-- **Binomial** distributes losses uniformly according to the packet error ratio (`per`).
-- **Metronome** creates periodic bursts using a period, duration, and offset.
-- **Gilbert-Elliott** models bursty loss through transition and packet probabilities for good and bad states.
-- **CustomMaskPLS** applies a predefined binary packet-loss mask.
+PLCTestbench stores run records, serialized worker configurations, and data-tree metadata through the database manager. Audio files and generated artifacts are stored separately under `TestbenchConfiguration.root_folder`.
 
-## Crossfades
+Select the backend with `TestbenchConfiguration.db_platform`:
 
-PLC output can be faded against received audio at the start or end of a lost region. `fade_in` controls the left edge and `crossfade` controls the right edge; both default to no crossfade.
+| Backend | Best suited to | External service | Configuration |
+| --- | --- | --- | --- |
+| `DBPlatform.TINYDB` | Local experiments, notebooks, tests, and development | None | No database connection fields |
+| `DBPlatform.MONGODB` | Managed or shared deployments and data that must live in an explicitly operated database service | MongoDB | Host, port, username, and password |
 
-Use `ManualCrossfadeSettings` when selecting the length and curve explicitly, or use convenience settings such as `LinearCrossfadeSettings`, `QuadraticCrossfadeSettings`, `CubicCrossfadeSettings`, and `SinusoidalCrossfadeSettings`.
+### TinyDB
 
-For a frequency-dependent transition, supply a `MultibandSettings` entry followed by one crossfade setting for each band. The number of crossfade settings must match the number of frequency bands.
+TinyDB is the default. It is embedded in the PLCTestbench process and stores records in local JSON files, so it works immediately after installing the Python package.
 
-See [`plctestbench.settings`](../reference/settings.md) for the complete settings types and validation rules.
+```python
+from plctestbench.models import TestbenchConfiguration
+
+configuration = TestbenchConfiguration(
+    root_folder="/path/to/experiment-data",
+)
+```
+
+The equivalent explicit configuration is:
+
+```python
+from plctestbench.models import DBPlatform, TestbenchConfiguration
+
+configuration = TestbenchConfiguration(
+    root_folder="/path/to/experiment-data",
+    db_platform=DBPlatform.TINYDB,
+)
+```
+
+The backend creates its JSON files automatically in the operating system's temporary-file directory. It does not use `db_ip`, `db_port`, `db_username`, or `db_password`. The artifact `root_folder` does not change the TinyDB file location.
+
+TinyDB avoids all service setup and is the recommended starting point. Its automatically allocated temporary files are not a replacement for a deliberately managed, shared database deployment; choose MongoDB when that behavior is required.
+
+### MongoDB
+
+Select MongoDB explicitly and supply all four connection fields:
+
+```python
+from plctestbench.models import DBPlatform, TestbenchConfiguration
+
+configuration = TestbenchConfiguration(
+    root_folder="/path/to/experiment-data",
+    db_platform=DBPlatform.MONGODB,
+    db_ip="127.0.0.1",
+    db_port=27017,
+    db_username="myUserAdmin",
+    db_password="admin",
+)
+```
+
+| Field | Purpose |
+| --- | --- |
+| `db_ip` | Host name or IP address of the MongoDB server |
+| `db_port` | MongoDB TCP port; normally `27017` |
+| `db_username` | Username passed to the MongoDB client |
+| `db_password` | Password passed to the MongoDB client |
+
+The database manager opens a MongoDB database associated with the active user's email. When no `User` is supplied to `PLCTestbench`, the package's default user is used.
+
+The standalone quickstart includes a Docker example for starting a local MongoDB server. The same configuration fields can point to a hosted service, provided it is reachable and accepts the supplied credentials. MongoDB initialization fails if the server is unavailable or required connection values are missing.

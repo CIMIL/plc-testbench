@@ -12,8 +12,9 @@ nav:
       - Quickstart: getting-started/quickstart.md
   - Guides:
       - Configuration: guides/configuration.md
-      - Advanced PLC: guides/advanced-plc.md
       - Models and metrics: guides/models-and-metrics.md
+      - Crossfades: guides/crossfades.md
+      - Advanced PLC: guides/advanced-plc.md
       - Serving in an application: guides/serving.md
   - API reference: reference/index.md
 
