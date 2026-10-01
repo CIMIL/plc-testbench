@@ -39,8 +39,33 @@ from .utils import force_2d, prepare_progress_monitor, recursive_split_audio
 
 
 class PLCAlgorithm(Worker):
+    """Base class for packet-loss concealment algorithms.
 
-    def __init__(self, settings: PLCSettings):
+    Attributes:
+        packet_size (int): Number of samples processed per packet.
+        crossfade_settings: Configuration for the active crossfade processor.
+        crossfade_class: Crossfade implementation selected for the configured
+            frequency bands.
+        crossfade: Processor that blends predictions into valid audio.
+        fade_in (Crossfade): Processor that blends context into predictions.
+        algorithm_context_length (int): Number of context samples retained by
+            the algorithm.
+        n_channels (int): Number of channels in the current track.
+        context (np.ndarray): Most recent samples available to the predictor.
+    """
+
+    def __init__(self, settings: PLCSettings) -> None:
+        """Initialize common packet-loss concealment state.
+
+        Other Parameters:
+            crossfade (list[CrossfadeSettings] | CrossfadeSettings): Crossfade
+                configuration applied after a loss.
+            fade_in (list[CrossfadeSettings] | CrossfadeSettings): Fade-in
+                configuration applied to predicted packets.
+            crossfade_frequencies (list[int] | None): Frequencies separating
+                independently crossfaded bands.
+            crossover_order (int | None): Order of the crossover filters.
+        """
         super().__init__(settings)
         self.packet_size = self.settings.get("packet_size")
         self.crossfade_settings = self.settings.get("crossfade")
@@ -156,7 +181,19 @@ class PLCAlgorithm(Worker):
 
 
 class AdvancedPLC(PLCAlgorithm):
-    """ """
+    """Apply independently configured PLC algorithms to channels and bands.
+
+    Attributes:
+        plc_algorithms (dict): PLC algorithm chain for each channel group.
+        frequencies (dict[str, list[int]]): Crossover frequencies by channel.
+        crossover_order (int): Order of each crossover filter.
+        stereo_image_processing (StereoImageType): Stereo processing mode.
+        channel_link (bool): Whether channels are processed together.
+        fs (int): Audio sample rate in hertz.
+        crossovers (dict): Crossover filters for each channel group.
+        mid_side (bool): Whether mid/side processing is enabled.
+        mid_side_codec (MidSideCodec): Stereo mid/side converter.
+    """
 
     def get_worker(self, worker_settings, settings):
         class_name = type(worker_settings).__name__.replace("Settings", "")
@@ -164,6 +201,18 @@ class AdvancedPLC(PLCAlgorithm):
         return globals()[class_name](worker_settings)
 
     def __init__(self, settings: Settings) -> None:
+        """Initialize a multichannel, multiband PLC pipeline.
+
+        Other Parameters:
+            band_settings (dict[str, list[PLCSettings]]): PLC algorithms for
+                each channel group and frequency band.
+            frequencies (dict[str, list[int]]): Crossover frequencies for each
+                channel group.
+            order (int): Crossover-filter order. Defaults to ``4``.
+            stereo_image_processing (StereoImageType): Stereo processing mode.
+            channel_link (bool): Whether channels are processed together.
+                Defaults to ``True``.
+        """
         Worker.__init__(self, settings)
         all_plc_settings = self.settings.get("settings")
         self.plc_algorithms = {
@@ -253,11 +302,24 @@ class AdvancedPLC(PLCAlgorithm):
 
 
 class ZerosPLC(PLCAlgorithm):
-    """
-    ZerosPLC is ...
+    """Replace every lost packet with zeros.
+
+    Attributes:
+        settings (ZerosPLCSettings): Zero-filling and crossfade configuration.
     """
 
-    def __init__(self, settings: ZerosPLCSettings):
+    def __init__(self, settings: ZerosPLCSettings) -> None:
+        """Initialize a zero-filling PLC algorithm.
+
+        Other Parameters:
+            crossfade (list[CrossfadeSettings] | CrossfadeSettings): Crossfade
+                configuration applied after a loss.
+            fade_in (list[CrossfadeSettings] | CrossfadeSettings): Fade-in
+                configuration applied to predicted packets.
+            crossfade_frequencies (list[int] | None): Frequencies separating
+                independently crossfaded bands.
+            crossover_order (int | None): Order of the crossover filters.
+        """
         super().__init__(settings)
 
     def _predict(self, buffer: np.ndarray):
@@ -266,11 +328,38 @@ class ZerosPLC(PLCAlgorithm):
 
 
 class LastPacketPLC(PLCAlgorithm):
-    """
-    LastPacketPLC is ...
+    """Conceal losses by repeating or mirroring the previous packet.
+
+    Mirroring sample values can move them outside the normalized ``[-1, 1]``
+    range. The two clipping strategies handle that overflow differently:
+
+    - ``ClipStrategy.clip`` clamps every sample independently to ``-1`` or
+      ``1``. This guarantees bounded output, but large peaks become flat.
+    - ``ClipStrategy.subtract`` finds the first out-of-range sample and shifts
+      it and the rest of the packet by that sample's excess. The first
+      overflow lands on ``-1`` or ``1`` while relative differences in the
+      remaining waveform are preserved.
+
+    Attributes:
+        mirror_x (bool): Whether to reverse the packet in time.
+        mirror_y (bool): Whether to mirror sample values around the first
+            sample when time reversal is enabled.
+        clip_strategy (ClipStrategy): Strategy used for out-of-range samples.
     """
 
     def __init__(self, settings: LastPacketPLCSettings) -> None:
+        """Initialize a previous-packet concealment algorithm.
+
+        Other Parameters:
+            mirror_x (bool): Whether to reverse the packet in time. Defaults to
+                ``False``.
+            mirror_y (bool): Whether to mirror sample values. Defaults to
+                ``False``.
+            clip_strategy (ClipStrategy): Either clamp samples with
+                ``ClipStrategy.clip`` or shift the overflowing waveform tail
+                with ``ClipStrategy.subtract``. Defaults to
+                ``ClipStrategy.subtract``.
+        """
         super().__init__(settings)
         self.mirror_x = settings.get("mirror_x")
         self.mirror_y = settings.get("mirror_y")
@@ -297,13 +386,12 @@ class LastPacketPLC(PLCAlgorithm):
         return reconstructed_buffer
 
     def _clip(self, buffer: np.ndarray) -> np.ndarray:
-        """
-        Bring a mirrored packet back into the [-1, 1] range.
+        """Apply the configured overflow strategy to a mirrored packet.
 
-        Mirroring around the first sample can push the waveform outside the
-        valid range. ``ClipStrategy.clip`` hard-limits every sample, while
-        ``ClipStrategy.subtract`` shifts the remainder of the packet by the
-        excess of the first out-of-range sample, preserving its shape.
+        ``ClipStrategy.clip`` hard-limits every sample to ``[-1, 1]``.
+        ``ClipStrategy.subtract`` instead shifts the packet tail by the excess
+        of its first out-of-range sample. The latter preserves relative sample
+        differences but does not independently clamp every subsequent sample.
         """
         if self.clip_strategy == ClipStrategy.clip:
             return np.clip(buffer, -1.0, 1.0)
@@ -316,13 +404,47 @@ class LastPacketPLC(PLCAlgorithm):
 
 
 class LowCostPLC(PLCAlgorithm):
-    """
-    This class implements the Low Cost Concealment (LCC) described
-    in "Low-delay error concealment with low computational overhead
-    for audio over ip applications" by Marco Fink and Udo Zölzer
+    """Implement low-cost concealment (LCC).
+
+    LCC preprocesses recent valid audio to expose its periodic structure,
+    detects suitable zero crossings, and extracts recent waveform periods.
+    It phase-aligns and repeats those periods to replace a lost packet. This
+    avoids the model fitting and autocorrelation cost of an autoregressive
+    predictor and is therefore well suited to low-delay processing.
+
+    The algorithm performs its own transitions: it fades from a short linear
+    extrapolation into the repeated waveform and fades the concealment tail
+    into the next valid packet. The generic
+    [`PLCAlgorithm`][plctestbench.plc_algorithm.PLCAlgorithm] fade-in and
+    crossfade should therefore remain disabled when LCC's built-in fade
+    lengths are nonzero; otherwise the same transition would be applied twice.
+    The settings validator rejects a generic fade-in and a single-band generic
+    crossfade when the corresponding built-in transition is enabled.
+
+    This implementation follows Marco Fink and Udo Zölzer,
+    [*Low-delay error concealment with low computational overhead for audio
+    over IP applications*](https://dafx.de/paper-archive/2014/dafx14_marco_fink_low_delay_error_concealme.pdf).
+
+    Attributes:
+        lcc (LowCostConcealment): Low-cost concealment processor.
+        samplerate (int): Audio sample rate in hertz.
     """
 
     def __init__(self, settings: LowCostPLCSettings) -> None:
+        """Initialize the low-cost concealment processor.
+
+        Other Parameters:
+            max_frequency (float): Highest processed frequency in hertz.
+                Defaults to ``4800``.
+            f_min (int): Lowest processed frequency in hertz. Defaults to
+                ``80``.
+            beta (float): LCC tuning coefficient. Defaults to ``1``.
+            n_m (int): Number of modeled components. Defaults to ``2``.
+            fade_in_length (int): Fade-in length. Defaults to ``10``.
+            fade_out_length (float): Fade-out length. Defaults to ``0.5``.
+            extraction_length (int): Context extraction length. Defaults to
+                ``2``.
+        """
         super().__init__(settings)
         self.lcc = LowCostConcealment(
             settings.get("max_frequency"),
@@ -345,11 +467,34 @@ class LowCostPLC(PLCAlgorithm):
 
 
 class BurgPLC(PLCAlgorithm):
-    """
-    BurgPLC is ...
+    """Predict lost packets with a Burg autoregressive model. Implementation
+    taken from [here](https://github.com/matteosacchetto/burg-implementation-experiments).
+
+    An autoregressive (AR) model represents each sample as a weighted sum of a
+    fixed number of preceding samples. After fitting those weights on recent
+    valid context, the model recursively predicts the samples of a missing
+    packet. This works best while the signal remains locally stationary.
+
+    Burg's parameter-estimation method determines the AR coefficients by
+    recursively minimizing both forward and backward prediction errors. It
+    updates one reflection coefficient at each model order, avoids explicitly
+    forming an autocorrelation matrix, and produces a stable all-pole model.
+
+    Attributes:
+        order (int): Order of the autoregressive model.
+        previous_valid (bool): Whether the previous packet was received.
+        coefficients (np.ndarray): Current autoregressive coefficients.
+        burg: Platform-specific Burg predictor.
     """
 
     def __init__(self, settings: BurgPLCSettings) -> None:
+        """Initialize the Burg autoregressive predictor.
+
+        Other Parameters:
+            context_length (int): Context duration in milliseconds. Defaults
+                to ``100``.
+            order (int): Autoregressive model order. Defaults to ``1``.
+        """
         super().__init__(settings)
         self.order = settings.get("order")
         self.previous_valid = False
@@ -382,11 +527,24 @@ class BurgPLC(PLCAlgorithm):
 
 
 class ExternalPLC(PLCAlgorithm):
-    """
-    ExternalPLC is ...
+    """Delegate concealment to the optional external PLC implementation.
+
+    Attributes:
+        bpt: Configured external ``BasePlcTemplate`` processor.
     """
 
     def __init__(self, settings: ExternalPLCSettings) -> None:
+        """Initialize the optional external PLC processor.
+
+        Other Parameters:
+            crossfade (list[CrossfadeSettings] | CrossfadeSettings): Crossfade
+                configuration applied after a loss.
+            fade_in (list[CrossfadeSettings] | CrossfadeSettings): Fade-in
+                configuration applied to predicted packets.
+            crossfade_frequencies (list[int] | None): Frequencies separating
+                independently crossfaded bands.
+            crossover_order (int | None): Order of the crossover filters.
+        """
         super().__init__(settings)
         if BasePlcTemplate is None:
             raise ImportError("External PLC is not available on this platform.")
@@ -403,11 +561,51 @@ class ExternalPLC(PLCAlgorithm):
 
 
 class VermaPLC(PLCAlgorithm):
-    """
-    VermaPLC is ...
+    """Predict lost audio with the Verma neural-network model. Reference paper:
+    [*A Deep Learning Approach for
+    Low-Latency Packet Loss Concealment of Audio Signals in Networked Music
+    Performance Applications*](https://ieeexplore.ieee.org/document/9210988).
+
+    The method converts recent valid audio into a mel spectrogram and supplies
+    that time-frequency context, together with the immediately preceding audio
+    packet, to a neural synthesis model. A convolutional encoder summarizes
+    the spectral context and a fully connected synthesis network predicts the
+    missing waveform directly. This implementation runs an exported ONNX model
+    independently for each channel and uses the newest quarter of the
+    configured context—the paper's two-second full-resolution branch with the
+    default eight-second context.
+
+    Attributes:
+        model (VermaNet): Neural-network inference wrapper.
+        fs_dl (int): Sample rate expected by the model.
+        context_length (int): Configured context duration in milliseconds.
+        context_length_samples (int): Context duration converted to samples.
+        hop_size (int): Spectrogram hop size in samples.
+        window_length (int): Spectrogram window length in samples.
+        lower_edge_hertz (float): Lowest mel-spectrogram frequency.
+        upper_edge_hertz (float): Highest mel-spectrogram frequency.
+        num_mel_bins (int): Number of mel-frequency bins.
+        sample_rate (int): Input audio sample rate in hertz.
     """
 
     def __init__(self, settings: VermaPLCSettings) -> None:
+        """Initialize the Verma neural predictor.
+
+        Other Parameters:
+            model_path (str): Path to the ONNX model.
+            fs_dl (int): Sample rate expected by the model. Defaults to
+                ``16000``.
+            context_length (int): Context duration in milliseconds. Defaults
+                to ``8000``.
+            hop_size (int): Spectrogram hop size. Defaults to ``160``.
+            window_length (int): Spectrogram window length. Defaults to
+                ``480``.
+            lower_edge_hertz (float): Lowest mel frequency. Defaults to
+                ``40.0``.
+            upper_edge_hertz (float): Highest mel frequency. Defaults to
+                ``7600.0``.
+            num_mel_bins (int): Number of mel bins. Defaults to ``100``.
+        """
         super().__init__(settings)
         self.model = VermaNet(settings.get("model_path"))
         self.fs_dl = settings.get("fs_dl")
@@ -462,9 +660,54 @@ class VermaPLC(PLCAlgorithm):
 
 
 class PARCnetPLC(PLCAlgorithm):
-    """ """
+    """Predict lost packets with the PARCnet hybrid AR/neural model.
+    Taken from the [official PARCnet implementation](https://github.com/polimi-ispl/PARCnet). Reference paper:
+    [*Hybrid Packet Loss Concealment for Real-Time Networked Music
+    Applications*](https://ieeexplore.ieee.org/abstract/document/10360264).
+
+    PARCnet combines two parallel predictors. An online linear AR branch fits
+    recent valid samples using autocorrelation and Levinson--Durbin recursion,
+    while a causal neural branch predicts the residual that the linear model
+    cannot explain. Their outputs are added to form the concealed packet. The
+    neural contribution is faded in to reduce boundary discontinuities, and
+    this implementation predicts an extra tail that is crossfaded into the
+    next valid packet. For burst losses, it also fades the next prediction into
+    the previous prediction tail.
+
+    Attributes:
+        dl_model_path (str): Path to the neural-network model.
+        ar_order (int): Order of the autoregressive predictor.
+        ar_fade_dim (int): Configured autoregressive fade length; retained for
+            model-configuration compatibility.
+        ar_diagonal_load (float): Diagonal loading applied to AR fitting.
+        dl_fs (int): Sample rate expected by the neural model.
+        extra_packet_dim (int): Number of extra prediction samples.
+        nn_fade_dim (int): Neural-network crossfade length in samples.
+        context_length_blocks (int): Number of context packets.
+        context_length_samples (int): Total context length in samples.
+        model (PARCnet): PARCnet inference wrapper.
+        extra_pred_buffer (np.ndarray): Prediction tail blended into the next
+            valid packet.
+        is_burst (bool): Whether the current loss belongs to a burst.
+    """
 
     def __init__(self, settings: PARCnetPLCSettings) -> None:
+        """Initialize the PARCnet predictor.
+
+        Other Parameters:
+            dl_model_path (str): Path to the neural-network model.
+            dl_fs (int): Model sample rate. Defaults to ``44100``.
+            extra_packet_dim (int): Extra prediction length. Defaults to
+                ``256``.
+            ar_order (int): Autoregressive model order. Defaults to ``256``.
+            ar_fade_dim (int): Autoregressive fade length retained for model
+                configuration compatibility. Defaults to ``8``.
+            ar_diagonal_load (float): AR diagonal loading. Defaults to
+                ``0.001``.
+            context_length_blocks (int): Number of context packets. Defaults
+                to ``8``.
+            nn_fade_dim (int): Neural-network fade length. Defaults to ``64``.
+        """
         super().__init__(settings)
 
         self.dl_model_path = settings.get("dl_model_path")

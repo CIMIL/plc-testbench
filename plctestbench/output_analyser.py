@@ -38,7 +38,13 @@ def normalise(x, amp_scale=1.0):
 
 
 class OutputAnalyser(Worker):
-    """Base class for output analysers."""
+    """Base class for output analysers.
+
+    Attributes:
+        settings (Settings): Configuration used by the analyser.
+        persistent (bool): Whether results produced by the analyser persist.
+        progress_monitor: Progress-monitor factory bound to this worker.
+    """
 
     def __init__(self, settings: Settings) -> None:
         """Initialize state shared by output analysers.
@@ -49,6 +55,11 @@ class OutputAnalyser(Worker):
 
 
 class SimpleCalculator(OutputAnalyser):
+    """Base class for calculators that compare windowed audio frames.
+
+    Attributes:
+        settings (Settings): Windowing and normalization configuration.
+    """
 
     def run(
         self,
@@ -91,12 +102,17 @@ class SimpleCalculator(OutputAnalyser):
 
 
 class MSECalculator(SimpleCalculator):
-    """Calculate the windowed mean squared error between two audio tracks."""
+    """Calculate the windowed mean squared error between two audio tracks.
 
-    def __init__(self, settings: MSECalculatorSettings):
+    Attributes:
+        settings (MSECalculatorSettings): Windowing and normalization
+            configuration.
+    """
+
+    def __init__(self, settings: MSECalculatorSettings) -> None:
         """Initialize a mean squared error calculator.
 
-        Module parameters:
+        Other Parameters:
             N (int): Analysis-window length in samples. Defaults to ``1024``.
             hop (int | None): Number of samples between adjacent windows.
                 Defaults to half of ``N`` when ``None``.
@@ -132,12 +148,17 @@ class MSECalculator(SimpleCalculator):
 
 
 class MAECalculator(SimpleCalculator):
-    """Calculate the windowed mean absolute error between two audio tracks."""
+    """Calculate the windowed mean absolute error between two audio tracks.
 
-    def __init__(self, settings: MAECalculatorSettings):
+    Attributes:
+        settings (MAECalculatorSettings): Windowing and normalization
+            configuration.
+    """
+
+    def __init__(self, settings: MAECalculatorSettings) -> None:
         """Initialize a mean absolute error calculator.
 
-        Module parameters:
+        Other Parameters:
             N (int): Analysis-window length in samples. Defaults to ``1024``.
             hop (int | None): Number of samples between adjacent windows.
                 Defaults to half of ``N`` when ``None``.
@@ -173,13 +194,17 @@ class MAECalculator(SimpleCalculator):
 
 
 class SpectralEnergyCalculator(OutputAnalyser):
-    """Calculate the quared error between the magnitude spectra
-    of reconstructed and reference tracks."""
+    """Calculate the squared error between the magnitude spectra.
 
-    def __init__(self, settings: SpectralEnergyCalculatorSettings):
+    Attributes:
+        settings (SpectralEnergyCalculatorSettings): Spectral-analysis
+            configuration.
+    """
+
+    def __init__(self, settings: SpectralEnergyCalculatorSettings) -> None:
         """Initialize a spectral-energy calculator.
 
-        Module parameters:
+        Other Parameters:
             N (int): DFT window length in samples. Defaults to ``1024``.
             hop (int | None): Number of samples between adjacent windows.
                 Defaults to half of ``N`` when ``None``.
@@ -243,12 +268,18 @@ class SpectralEnergyCalculator(OutputAnalyser):
 
 class PEAQCalculator(OutputAnalyser):
     """Calculate whole-track PEAQ objective quality metrics.
-    The underlying PEAQ implementation is [GstPEAQ](https://github.com/HSU-ANT/gstpeaq)."""
+
+    The underlying PEAQ implementation is
+    [GstPEAQ](https://github.com/HSU-ANT/gstpeaq).
+
+    Attributes:
+        settings (PEAQCalculatorSettings): PEAQ processing configuration.
+    """
 
     def __init__(self, settings: PEAQCalculatorSettings) -> None:
         """Initialize a PEAQ calculator.
 
-        Module parameters:
+        Other Parameters:
             peaq_mode (str): PEAQ processing mode: ``"basic"`` or
                 ``"advanced"``. Defaults to ``"basic"``.
         """
@@ -326,12 +357,23 @@ class PEAQCalculator(OutputAnalyser):
 
 class WindowedPEAQCalculator(OutputAnalyser):
     """Calculate packet-aligned PEAQ scores around individual losses.
-    The underlying PEAQ implementation is [GstPEAQ](https://github.com/HSU-ANT/gstpeaq)."""
+
+    The underlying PEAQ implementation is
+    [GstPEAQ](https://github.com/HSU-ANT/gstpeaq).
+
+    Attributes:
+        fs (int): Audio sample rate in hertz.
+        packet_size (int): Number of audio samples in each packet.
+        intorno_length (int): Length of each loss-centered analysis region in
+            milliseconds.
+        mode_flag (str): Command-line flag selecting the GstPEAQ mode.
+        sign (int): Multiplier used to orient the selected PEAQ score.
+    """
 
     def __init__(self, settings: WindowedPEAQCalculatorSettings) -> None:
         """Initialize a windowed PEAQ calculator.
 
-        Module parameters:
+        Other Parameters:
             peaq_mode (str): PEAQ processing mode: ``"basic"`` or
                 ``"advanced"``. Defaults to ``"basic"``.
             intorno_length (int): Duration of each loss-centered analysis
@@ -465,12 +507,23 @@ class PerceptualCalculator(OutputAnalyser):
     - Compute a constant-Q spectrogram for each pair of regions.
     - Estimate the perceptual audibility of each glitch.
     - Store the results in a packet-aligned metric vector.
+
+    Attributes:
+        fs (int): Audio sample rate in hertz.
+        packet_size (int): Number of audio samples in each packet.
+        intorno_length (int): Length of each loss-centered analysis region in
+            milliseconds.
+        min_frequency (float): Lowest analyzed frequency in hertz.
+        max_frequency (float): Highest analyzed frequency in hertz.
+        bins_per_octave (int): Number of constant-Q bins per octave.
+        n_bins (int): Total number of constant-Q frequency bins.
+        minimum_window (int): Minimum transform-window length in samples.
     """
 
     def __init__(self, settings: PerceptualCalculatorSettings) -> None:
         """Initialize a perceptual glitch-audibility calculator.
 
-        Module parameters:
+        Other Parameters:
             intorno_length (int): Duration of each loss-centered analysis
                 region in milliseconds. Defaults to ``300``.
             linear_mag (bool): Whether to use linear magnitudes. Defaults to
@@ -554,12 +607,26 @@ class PerceptualCalculator(OutputAnalyser):
 
 
 class HumanCalculator(OutputAnalyser):
-    """Generate and run a human listening test for packet-loss events."""
+    """Generate and run a human listening test for packet-loss events.
+
+    Attributes:
+        fs (int): Audio sample rate in hertz.
+        packet_size (int): Number of audio samples in each packet.
+        stimulus_length (int): Stimulus duration in milliseconds.
+        single_loss (bool): Whether each stimulus contains only one loss.
+        stimuli_per_page (int): Number of stimuli shown on each page.
+        pages (int): Number of listening-test pages.
+        stimuli_number (int): Total number of stimuli in the test.
+        choose_seed (int): Seed used when selecting stimuli.
+        persistent (bool): Whether the listening-test result persists.
+        listening_test (ListeningTest): Listening test created by
+            [`run()`][plctestbench.output_analyser.HumanCalculator.run].
+    """
 
     def __init__(self, settings: HumanCalculatorSettings) -> None:
         """Initialize a human listening-test calculator.
 
-        Module parameters:
+        Other Parameters:
             stimulus_length (int): Stimulus duration in milliseconds. Defaults
                 to ``3000``.
             single_loss_per_stimulus (bool): Whether each stimulus may contain
@@ -701,13 +768,19 @@ class HumanCalculator(OutputAnalyser):
 
 
 class PLCMOSCalculator(OutputAnalyser):
-    """Estimate perceptual quality with the PLCMOS.
-    Implementation is taken from the [official repo](https://github.com/microsoft/PLC-Challenge/tree/main/PLCMOS)."""
+    """Estimate perceptual quality with PLCMOS.
+
+    The implementation is taken from the
+    [official repository](https://github.com/microsoft/PLC-Challenge/tree/main/PLCMOS).
+
+    Attributes:
+        settings (PLCMOSCalculatorSettings): PLCMOS model configuration.
+    """
 
     def __init__(self, settings: PLCMOSCalculatorSettings) -> None:
         """Initialize a PLCMOS calculator.
 
-        Module parameters:
+        Other Parameters:
             plcmos_model (str): PLCMOS model version. Supported values are
                 ``"0"``, ``"0alpha"``, ``"2-val"``, and ``"2"``. Defaults
                 to ``"2"``.
@@ -767,14 +840,19 @@ class PLCMOSCalculator(OutputAnalyser):
 
 
 class PESQCalculator(OutputAnalyser):
-    """Calculate a whole-track PESQ quality score. Implementation is
-    taken from `pesqc2`, which implements wideband PESQ according to the
-    P.862.2 with Corrigendum 2 specification"""
+    """Calculate a whole-track PESQ quality score.
+
+    The implementation is taken from `pesqc2`, which implements wideband PESQ
+    according to the P.862.2 with Corrigendum 2 specification.
+
+    Attributes:
+        settings (PESQCalculatorSettings): PESQ bandwidth configuration.
+    """
 
     def __init__(self, settings: PESQCalculatorSettings) -> None:
         """Initialize a PESQ calculator.
 
-        Module parameters:
+        Other Parameters:
             pesq_mode (PESQMode): PESQ bandwidth mode. Use ``PESQMode.wb``
                 for wideband or ``PESQMode.nb`` for narrowband. Defaults to
                 ``PESQMode.wb``.

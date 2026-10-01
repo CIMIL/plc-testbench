@@ -1,7 +1,7 @@
 site_name: PLCTestbench
 site_description: Packet-loss concealment benchmarking documentation
-repo_url: https://github.com/LucaVignati/plc-testbench
-repo_name: LucaVignati/plc-testbench
+repo_url: https://github.com/CIMIL/plc-testbench
+repo_name: CIMIL/plc-testbench
 docs_dir: content
 site_dir: ../../site
 
@@ -12,7 +12,6 @@ nav:
       - Quickstart: getting-started/quickstart.md
   - Guides:
       - Configuration: guides/configuration.md
-      - Custom PLC plugins: guides/custom-plugins.md
       - Advanced PLC: guides/advanced-plc.md
       - Models and metrics: guides/models-and-metrics.md
       - Serving in an application: guides/serving.md
@@ -55,7 +54,7 @@ plugins:
         python:
           paths: [../..]
           options:
-            show_source: false
+            show_source: true
             show_signature_annotations: true
             separate_signature: true
             members_order: source
