@@ -62,10 +62,13 @@ test = [
 
 [tool.hatch.build.targets.wheel]
 packages = ["plctestbench"]
-include = ["plctestbench/_docs/**"]
+include = ["plctestbench/_docs/**", "plctestbench/dl_models/**"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"dl_models" = "plctestbench/dl_models"
 
 [tool.hatch.build.targets.sdist]
-include = ["plctestbench/_docs/**"]
+include = ["plctestbench/**", "dl_models/**"]
 
 # burg-plc is declared as a git dependency (Linux-only).
 [tool.hatch.metadata]

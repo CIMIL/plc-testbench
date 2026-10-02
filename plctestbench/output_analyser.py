@@ -1,14 +1,14 @@
 import subprocess
 
+import librosa
 import numpy as np
 import numpy.random as npr
-import soundfile as sf
 from pesqc2 import pesq
 
 from .file_wrapper import AudioFile, DataFile, PEAQData, SimpleCalculatorData
 from .listening_tests import ListeningTest
 from .plcmos import PLCMOSEstimator
-from .perceptual_metric import *
+from .perceptual_metric import PerceptualMetric
 from .settings import (
     HumanCalculatorSettings,
     MAECalculatorSettings,
@@ -35,6 +35,11 @@ from .worker import Worker
 
 def normalise(x, amp_scale=1.0):
     return amp_scale * x / np.amax(np.abs(x))
+
+
+def _as_channel_matrix(audio: np.ndarray) -> np.ndarray:
+    """Return audio in ``(samples, channels)`` form."""
+    return audio[:, np.newaxis] if audio.ndim == 1 else audio
 
 
 class OutputAnalyser(Worker):
@@ -803,7 +808,7 @@ class PLCMOSCalculator(OutputAnalyser):
             (SimpleCalculatorData): The channel-averaged PLCMOS score.
         """
         plcmos_model: PLCMOSModel = self.settings.get("plcmos_model")
-        request_intrusive: PLCMOSModel = self.settings.get("request_intrusive")
+        request_intrusive: bool = self.settings.get("request_intrusive")
 
         plcmos = PLCMOSEstimator(model_version=plcmos_model.value)
 
@@ -825,8 +830,18 @@ class PLCMOSCalculator(OutputAnalyser):
             target_sr=16000,
         ).T
 
+        reconstructed_track_node_resampled = _as_channel_matrix(
+            reconstructed_track_node_resampled
+        )
+        original_track_node_resampled = _as_channel_matrix(
+            original_track_node_resampled
+        )
+        if reconstructed_track_node_resampled.shape[1] != original_track_node_resampled.shape[1]:
+            raise ValueError("Original and reconstructed tracks must have the same channels")
+
         score = 0
-        for channel_idx in range(original_track_node.get_channels()):
+        channel_count = original_track_node_resampled.shape[1]
+        for channel_idx in range(channel_count):
             score += plcmos.run(
                 reconstructed_track_node_resampled[:, channel_idx],
                 16000,
@@ -835,7 +850,7 @@ class PLCMOSCalculator(OutputAnalyser):
 
         dummy_progress_bar(self, desc=f"{str(self)}|{id}")
 
-        score /= original_track_node.get_channels()
+        score /= channel_count
         return SimpleCalculatorData(score)
 
 
@@ -886,11 +901,14 @@ class PESQCalculator(OutputAnalyser):
             target_sr=16000,
         ).T
 
-        # Downmix to mono
-        reconstructed_track_node_resampled = reconstructed_track_node_resampled.mean(
-            axis=1
-        )
-        original_track_node_resampled = original_track_node_resampled.mean(axis=1)
+        # Downmix to mono after normalizing mono and multichannel inputs to the
+        # same samples-by-channels representation.
+        reconstructed_track_node_resampled = _as_channel_matrix(
+            reconstructed_track_node_resampled
+        ).mean(axis=1)
+        original_track_node_resampled = _as_channel_matrix(
+            original_track_node_resampled
+        ).mean(axis=1)
 
         score = pesq(
             16000,

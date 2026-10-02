@@ -8,7 +8,8 @@ has two interchangeable implementations (essentia when available, librosa
 otherwise).
 
 The subprocess/metric installers that need external programs or networks
-(PEAQ, PESQ, PLCMOS, MUSHRA) are intentionally out of scope for unit tests.
+(PEAQ and MUSHRA) are intentionally out of scope for unit tests. PESQ and
+PLCMOS integration contracts are covered with their inference calls mocked.
 """
 
 from __future__ import annotations
@@ -22,6 +23,8 @@ from plctestbench.output_analyser import (
     MSECalculator,
     OutputAnalyser,
     PerceptualCalculator,
+    PESQCalculator,
+    PLCMOSCalculator,
     SimpleCalculator,
     SpectralEnergyCalculator,
     normalise,
@@ -31,6 +34,8 @@ from plctestbench.settings import (
     MAECalculatorSettings,
     MSECalculatorSettings,
     PerceptualCalculatorSettings,
+    PESQCalculatorSettings,
+    PLCMOSCalculatorSettings,
     SpectralEnergyCalculatorSettings,
 )
 
@@ -174,6 +179,71 @@ def test_metric_results_are_wrapped_in_simple_calculator_data():
 
 def test_output_analyser_base_class_constructs_with_primed_settings():
     assert OutputAnalyser(attach(MSECalculatorSettings())) is not None
+
+
+# --------------------------------------------------------------------------- #
+# Whole-track speech-quality metrics
+# --------------------------------------------------------------------------- #
+
+
+@pytest.mark.parametrize("channels", [1, 2])
+def test_plcmos_returns_the_channel_average_for_mono_and_stereo(monkeypatch, channels):
+    class FakePLCMOS:
+        def __init__(self, model_version):
+            assert model_version == "2"
+
+        def run(self, degraded, samplerate, clean):
+            assert samplerate == 16000
+            assert clean is None
+            return float(np.mean(degraded))
+
+    monkeypatch.setattr("plctestbench.output_analyser.PLCMOSEstimator", FakePLCMOS)
+    original = np.column_stack(
+        [np.full(64, channel + 1, dtype=np.float32) for channel in range(channels)]
+    )
+    reconstructed = original * 0.5
+    if channels == 1:
+        original = original[:, 0]
+        reconstructed = reconstructed[:, 0]
+
+    result = PLCMOSCalculator(attach(PLCMOSCalculatorSettings())).run(
+        AudioStub(original), AudioStub(reconstructed), id="test"
+    )
+
+    assert result.get_error().shape == (1,)
+    assert result.get_error().item() == pytest.approx(np.mean(reconstructed))
+
+
+@pytest.mark.parametrize("channels", [1, 2])
+def test_pesq_downmixes_mono_and_stereo_inputs(monkeypatch, channels):
+    calls = []
+
+    def fake_pesq(samplerate, original, reconstructed, mode):
+        calls.append((samplerate, original, reconstructed, mode))
+        return 3.75
+
+    monkeypatch.setattr("plctestbench.output_analyser.pesq", fake_pesq)
+    original = np.column_stack(
+        [np.full(64, channel + 1, dtype=np.float32) for channel in range(channels)]
+    )
+    reconstructed = original * 0.5
+    expected_original = original.mean(axis=1)
+    expected_reconstructed = reconstructed.mean(axis=1)
+    if channels == 1:
+        original = original[:, 0]
+        reconstructed = reconstructed[:, 0]
+
+    result = PESQCalculator(attach(PESQCalculatorSettings())).run(
+        AudioStub(original), AudioStub(reconstructed), id="test"
+    )
+
+    samplerate, pesq_original, pesq_reconstructed, mode = calls[0]
+    assert samplerate == 16000
+    assert mode == "wb"
+    np.testing.assert_allclose(pesq_original, expected_original)
+    np.testing.assert_allclose(pesq_reconstructed, expected_reconstructed)
+    assert result.get_error().shape == (1,)
+    assert result.get_error().item() == pytest.approx(3.75)
 
 
 # --------------------------------------------------------------------------- #

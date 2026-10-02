@@ -2,8 +2,8 @@
 https://github.com/microsoft/PLC-Challenge/blob/main/PLCMOS/plc_mos.py
 """
 
-import os
 import math
+from pathlib import Path
 
 import numpy as np
 import onnxruntime as ort
@@ -24,20 +24,20 @@ class PLCMOSEstimator:
         self.model_version = str(model_version)
         model_paths = {
             # v0alpha model: two encoders (no shared weights) plus dense, ~.93 PCC on v1 test set
-            "0alpha": [("../dl_models/plcmos_v0.onnx", 999999999999), (None, 0)],
+            "0alpha": [("plcmos_v0.onnx", 999999999999), (None, 0)],
             # v0 models:
             # * Intrusive (old default): ~.0.997 PCC on v1 test set, ~0.927 PCC / ~0.857 SRCC on v2 test set
             # * Nonintrusive: ~.0.987 PCC on v1 test set
             "0": [
-                ("../dl_models/plcmos_v1_intrusive.onnx", 768),
-                ("../dl_models/plcmos_v1_nonintrusive.onnx", 999999999999),
+                ("plcmos_v1_intrusive.onnx", 768),
+                ("plcmos_v1_nonintrusive.onnx", 999999999999),
             ],
             # v2 model for validation, "cool helmet"
             # ~0.97 PCC / ~0.95 SRCC / ~0.09 MAE on v2 test set
-            "2-val": [(None, 0), ("../dl_models/plcmos_v2_val.onnx", 999999999999)],
+            "2-val": [(None, 0), ("plcmos_v2_val.onnx", 999999999999)],
             # v2 model final run (all data - nothing held out), "lucid garden", current default
             # Not reporting metrics (invalid, since no holdout) but reasonable to assume as good as or better than v2-val
-            "2": [(None, 0), ("../dl_models/plcmos_v2.onnx", 999999999999)],
+            "2": [(None, 0), ("plcmos_v2.onnx", 999999999999)],
         }
         model_use_embed = {
             "0alpha": False,
@@ -48,10 +48,18 @@ class PLCMOSEstimator:
 
         self.sessions = []
         self.max_lens = []
+        package_directory = Path(__file__).resolve().parent
+        model_directory = package_directory / "dl_models"
+        if not model_directory.is_dir():
+            # Source checkouts keep the models at the repository root; built
+            # wheels install the same files inside the package.
+            model_directory = package_directory.parent / "dl_models"
         for path, max_len in model_paths[self.model_version]:
             if path is not None:
-                file_dir = os.path.dirname(os.path.realpath(__file__))
-                self.sessions.append(ort.InferenceSession(os.path.join(file_dir, path)))
+                model_path = model_directory / path
+                if not model_path.is_file():
+                    raise FileNotFoundError(f"PLCMOS model file not found: {model_path}")
+                self.sessions.append(ort.InferenceSession(str(model_path)))
                 self.max_lens.append(max_len)
             else:
                 self.sessions.append(None)
@@ -200,7 +208,7 @@ class PLCMOSEstimator:
                 intermediate_scores[str(i) + "_int"] = mos_val
                 mos += mos_val
 
-            if audio_clean is None or (not self.sessions[1] is None and combined):
+            if audio_clean is None or (self.sessions[1] is not None and combined):
                 session = self.sessions[1]
                 assert (
                     session is not None
@@ -223,8 +231,8 @@ class PLCMOSEstimator:
 
             if (
                 combined
-                and (not self.sessions[0] is None or self.sessions[1] is None)
-                and not audio_clean is None
+                and (self.sessions[0] is not None or self.sessions[1] is None)
+                and audio_clean is not None
             ):
                 mos /= 2.0
         if not return_intermediate_scores:

@@ -1201,6 +1201,6 @@ class PESQMode(Enum):
 
 class PESQCalculatorSettings(Settings):
 
-    def __init__(self, pesq_mode: PESQMode = PESQMode.wb):
+    def __init__(self, pesq_mode: str | PESQMode = PESQMode.wb):
         super().__init__()
         self.settings["pesq_mode"] = PESQMode(pesq_mode)

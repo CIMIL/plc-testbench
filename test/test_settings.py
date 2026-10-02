@@ -24,6 +24,9 @@ from plctestbench.settings import (
     LinearCrossfadeSettings,
     LowCostPLCSettings,
     NoCrossfadeSettings,
+    PESQCalculatorSettings,
+    PESQMode,
+    PLCMOSCalculatorSettings,
     Settings,
     ZerosPLCSettings,
 )
@@ -85,6 +88,23 @@ def test_crossfade_rejects_negative_exponent():
             exponent=-1.0,
             type=CrossfadeType.power,
         )
+
+
+def test_plcmos_settings_expose_supported_models_and_defaults():
+    settings = PLCMOSCalculatorSettings()
+
+    assert settings.get("plcmos_model").value == "2"
+    assert settings.get("request_intrusive") is True
+    assert PLCMOSCalculatorSettings("0alpha", False).get("plcmos_model").value == "0alpha"
+    with pytest.raises(ValueError):
+        PLCMOSCalculatorSettings("unsupported")
+
+
+def test_pesq_settings_expose_supported_modes_and_defaults():
+    assert PESQCalculatorSettings().get("pesq_mode").value == "wb"
+    assert PESQCalculatorSettings(PESQMode.nb).get("pesq_mode").value == "nb"
+    with pytest.raises(ValueError):
+        PESQCalculatorSettings(cast(PESQMode, "unsupported"))
 
 
 # --------------------------------------------------------------------------- #
