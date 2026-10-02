@@ -11,6 +11,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
+import plctestbench.utils as utils
 from plctestbench.file_wrapper import DataFile
 from plctestbench.filters import LinkwitzRileyCrossover, LinkwitzRileyFilter
 from plctestbench.low_cost_concealment import LowCostConcealment
@@ -25,6 +26,7 @@ from plctestbench.utils import (
     is_loud_enough,
     leading_silence,
     recursive_split_audio,
+    relative_to_root,
     trailing_silence,
 )
 
@@ -94,6 +96,20 @@ def test_recursive_split_audio_produces_one_band_per_crossover_plus_one():
 def test_force_2d_promotes_mono_audio():
     assert force_2d(np.zeros(5)).shape == (5, 1)
     assert force_2d(np.zeros((5, 2))).shape == (5, 2)
+
+
+def test_relative_to_root_falls_back_to_installed_package_resources(
+    tmp_path, monkeypatch
+):
+    project_root = tmp_path / "site-packages"
+    package_root = project_root / "plctestbench"
+    model = package_root / "dl_models" / "model.onnx"
+    model.parent.mkdir(parents=True)
+    model.touch()
+    monkeypatch.setattr(utils, "PROJECT_ROOT", project_root)
+    monkeypatch.setattr(utils, "PACKAGE_ROOT", package_root)
+
+    assert relative_to_root("dl_models/model.onnx") == model
 
 
 def test_extract_intorni_centers_the_window_on_the_loss():

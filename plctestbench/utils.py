@@ -7,7 +7,8 @@ from time import sleep
 
 import numpy as np
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
+PACKAGE_ROOT = Path(__file__).resolve().parent
+PROJECT_ROOT = PACKAGE_ROOT.parent
 
 
 def _is_notebook() -> bool:
@@ -148,7 +149,15 @@ def prepare_progress_monitor(progress_monitor) -> Callable:
 
 
 def relative_to_root(path):
-    return PROJECT_ROOT.joinpath(path)
+    project_path = PROJECT_ROOT.joinpath(path)
+    if project_path.exists():
+        return project_path
+
+    # Wheels install bundled resources inside ``plctestbench/`` rather than
+    # beside it in site-packages. Keep source-checkout paths as the default,
+    # but fall back to the package directory for installed model files.
+    package_path = PACKAGE_ROOT.joinpath(path)
+    return package_path if package_path.exists() else project_path
 
 
 def extract_intorni(
