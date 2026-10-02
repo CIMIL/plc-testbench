@@ -2,42 +2,47 @@
 
 PLCTestbench is a companion tool for researchers and developers working on Packet Loss Concealment (PLC). It greatly simplifies the process of measuring the reconstruction quality of PLC algorithms and allows to easily test the effects of different packet loss models and distributions.
 
-It features the implementation of some of the most common packet loss models, PLC algorithms and metrics:
+It includes packet-loss simulators, PLC algorithms, output analysers, and configurable crossfades:
 
-**Packet Loss Simulation**
+### Packet-loss simulators
+
 - **Binomial**: uniform distribution of packet losses, governed by the Packet Error Ratio (PER) parameter.
 - **Metronome**: periodic packet losses governed by the burst period, the burst length, and an offset.
 - **Gilbert-Elliot**: bursty distribution of packet losses, governed by the four probabilities associated to its two states (For each state, the probability of packet loss and the probability of transitioning to the other state) [[1](#1)].
+- **Custom mask (`CustomMaskPLS`)**: replays a supplied binary packet-loss pattern for deterministic comparisons.
 
-**PLC Algorithms**
+### PLC algorithms
+
 - **Zeros**: the lost samples are replaced by zeros.
 - **Last Packet**: the lost samples are replaced by the last received packet.
 - **Low-Cost**: implementation of the algorithm proposed in [[2](#2)].
 - **Burg**: Python bindings for the [C++ implementation of the Burg method](https://github.com/matteosacchetto/burg-implementation-experiments).
-- **Deep Learning**: implementation of the algorithm proposed in [[3](#3)].
+- **Verma (`VermaPLC`)**: runs the neural waveform predictor proposed in [[3](#3)] through ONNX Runtime.
+- **PARCnet (`PARCnetPLC`)**: combines an autoregressive branch with a causal neural residual predictor.
 - **External**: Python bindings for C++ to simplify the integration of existing algorithms.
 - **Advanced**: allows to apply different PLC algorithms to different frequency bands and audio channels (M/S processing included).
 
-**Metrics**
-- **Mean Square Error**: the mean square error between the original and reconstructed signal.
-- **PEAQ**: the Perceptual Evaluation of Audio Quality (PEAQ) metric, as defined in [[4](#4)].
-- **Human**: this metric produces the config file for a MUSHRA test using as stimuli excerpts of the reconstructed audio tracks. It also gathers the results of the test to be displayed alongside the other metrics.
+### Output analysers
+
+- **MSE (`MSECalculator`)** and **MAE (`MAECalculator`)**: compute windowed sample-domain reconstruction errors.
+- **Spectral energy (`SpectralEnergyCalculator`)**: compares the frequency-resolved energy of the original and reconstructed signals.
+- **PEAQ (`PEAQCalculator`)** and **windowed PEAQ (`WindowedPEAQCalculator`)**: calculate whole-track or loss-centered perceptual quality with GstPEAQ [[4](#4)].
+- **Perceptual (`PerceptualCalculator`)**: estimates the audibility of localized PLC artifacts with a constant-Q representation. Official implementation of the method proposed in [this paper](https://aes.org/publications/elibrary-page/?id=23028).
+- **PLCMOS (`PLCMOSCalculator`)**: estimates perceived PLC quality with [Microsoft's ONNX models](https://github.com/microsoft/PLC-Challenge/tree/main/PLCMOS).
+- **PESQ (`PESQCalculator`)**: calculates narrowband or wideband speech quality with `pesqc2`.
+- **Human (`HumanCalculator`)**: generates MUSHRA listening tests and maps listener scores back to packet positions.
+
+### Crossfade settings
+
+PLC boundaries can use manual, linear, quadratic, cubic, or sinusoidal crossfades. Crossfades can be configured independently for fade-in and return transitions, including frequency-dependent return crossfades.
+
+See the [models and metrics guide](plctestbench/_docs/content/guides/models-and-metrics.md) for module behavior, requirements, and selection guidance.
+
 ## Installation
 
-You will need a mongoDB database to store the results. You can install it locally or use a cloud service like [MongoDB Atlas](https://www.mongodb.com/cloud/atlas).
-It is recomended however to use the [Docker image](https://hub.docker.com/_/mongo) provided by MongoDB.
+PLCTestbench uses TinyDB by default. TinyDB runs inside the Python process and stores records in local JSON files, so a standard local installation does not require a database server or any external database application.
 
-Pull the image
-```bash
-    docker pull mongo:6.0.8
-```
-Then run the container setting the port to 27017 and the name to mongodb. Also set the username and password for the database.
-```bash
-    docker run -d -p 27017:27017 --name mongodb \
-    -e MONGO_INITDB_ROOT_USERNAME=myUserAdmin \
-    -e MONGO_INITDB_ROOT_PASSWORD=admin \
-    mongo:6.0.8
-```
+MongoDB remains available for managed or shared deployments that need a separately operated database. It must be selected explicitly and configured with its host, port, username, and password. See the [database backends documentation](plctestbench/_docs/content/guides/configuration.md#database-backends) for details; the [quickstart](plctestbench/_docs/content/getting-started/quickstart.md#use-mongodb) includes an optional MongoDB Docker example.
 
 Clone this repository and install the requirements and the plctestbench package with [uv](https://docs.astral.sh/uv/):
 
@@ -139,16 +144,17 @@ The built `site/` directory is self-contained and can be mounted by a backend ap
 
 The file `plctestbench.ipynb` contains a Jupyter Notebook with a basic example of how to use the tool.
 
-Input the settings of the testbench as follows:
+Input the settings of the testbench as follows. This uses the default embedded TinyDB backend and therefore needs no database connection settings:
+
 ```python
-    testbench_settings = {
-        'root_folder': 'path/to/root/folder',
-        'db_ip': 'ip.of.the.database',
-        'db_port': 27017,
-        'db_username': 'myUserAdmin',
-        'db_password': 'admin',
-}
+from plctestbench.models import TestbenchConfiguration
+
+testbench_settings = TestbenchConfiguration(
+    root_folder="path/to/root/folder",
+)
 ```
+
+To use MongoDB instead, select `DBPlatform.MONGODB` explicitly and provide the connection settings described in the [database backends documentation](plctestbench/_docs/content/guides/configuration.md#mongodb).
 
 List the audio files you want to input as follows (path relative to `root_folder`):
 ```python
@@ -169,10 +175,12 @@ plc_algorithms = [(ZerosPLC, ZerosPLCSettings()),
                   (LastPacketPLC, LastPacketPLCSettings()),
                   (LowCostPLC, LowCostPLCSettings()),
                   (BurgPLC, BurgPLCSettings()),
-                  (DeepLearningPLC, DeepLearningPLCSettings()),
+                  (VermaPLC, VermaPLCSettings()),
+                  (PARCnetPLC, PARCnetPLCSettings()),
                   (ExternalPLC, ExternalPLCSettings())]
 ```
-❗The DeepLearningPLC algorithm requires the `bufer_size` to be set to 128 in the `Settings` of the `PacketLossSimulator` of choice.
+
+`VermaPLC` requires the packet size used by its bundled ONNX model: **128 samples**.
 
 List the metrics you want to use as follows:
 ```python
@@ -334,52 +342,9 @@ python -m test.test_onnx_plc
 
 It compares each ONNX model against golden outputs captured from the original frameworks (`test/fixtures/*.npz`) before they were removed, and runs both `VermaPLC` and `PARCnetPLC` end-to-end on synthetic audio.
 
-## User Interface
-This user interface is an ongoing thesis project carried out by Stefano Dallona under the supervision of Luca Vignati.
-It is a web application developed using the React framework.
-The code is available in the following two repositories:
+## OpenPLC Studio
 
-- [plc-testbench-ui](https://github.com/stefano-dallona/plc-testbench-ui)
-- [react-test](https://github.com/stefano-dallona/react-test)
-
-The easiest way to try it out is to use the Docker image provided by Stefano Dallona:
-```bash
-    docker pull cimil/plc-testbench-ui:latest
-```
-This Docker image already contains the code of PLCTestbench so it only requires a running MongoDB instance (see previous section).
-
-Run the following command to start the container:
-```bash
-    docker run -e DB_USERNAME=$DB_USERNAME \
-               -e DB_PASSWORD=$DB_PASSWORD \
-               -e DB_HOST=$DB_HOST \
-               -e DB_CONN_STRING=$DB_CONN_STRING \
-               -e GEVENT_SUPPORT=$GEVENT_SUPPORT \
-               -e FLASK_APP=$FLASK_APP \
-               -e FLASK_DEBUG=$FLASK_DEBUG \
-               -e FRONTEND_DATA_FOLDER=$FRONTEND_DATA_FOLDER \
-               -e SECURITY_ENABLED=$SECURITY_ENABLED \
-               -p 5000:5000 \
-               -v /path/to/root/folder:/original_tracks \
-               --name plc-testbench-ui \
-               cimil/plc-testbench-ui:latest
-```
-Where the environment variables are:
-| Variable | Value | Description |
-| --- | --- | --- |
-| DB_USERNAME | myUserAdmin | Username of the database |
-| DB_PASSWORD | admin | Password of the database |
-| DB_HOST | ip.of.the.database | IP address of the database |
-| DB_CONN_STRING | mongodb://ip:27017 | Connection string of the database |
-| GEVENT_SUPPORT | True | Enable gevent support |
-| FLASK_APP | app.py | Flask application |
-| FLASK_DEBUG | True | Enable Flask debug mode |
-| FRONTEND_DATA_FOLDER | /original_tracks | Path to the folder containing the audio files |
-| SECURITY_ENABLED | False | Enable security |
-
-Then open your browser and go to `localhost:5000`.
-
-❗Please consider the pre-release status of this user interface when using it.
+For the web application built around PLCTestbench, see the [OpenPLC Studio repository](https://github.com/CIMIL/openplc-studio).
 
 ## References
     
