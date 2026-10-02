@@ -17,16 +17,19 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from plctestbench.file_wrapper import SimpleCalculatorData
+from plctestbench.file_wrapper import AudioFile, SimpleCalculatorData
+import plctestbench.output_analyser as output_analyser
 from plctestbench.output_analyser import (
     MAECalculator,
     MSECalculator,
     OutputAnalyser,
     PerceptualCalculator,
+    PEAQCalculator,
     PESQCalculator,
     PLCMOSCalculator,
     SimpleCalculator,
     SpectralEnergyCalculator,
+    WindowedPEAQCalculator,
     _resample_channel_matrix,
     normalise,
 )
@@ -35,9 +38,11 @@ from plctestbench.settings import (
     MAECalculatorSettings,
     MSECalculatorSettings,
     PerceptualCalculatorSettings,
+    PEAQCalculatorSettings,
     PESQCalculatorSettings,
     PLCMOSCalculatorSettings,
     SpectralEnergyCalculatorSettings,
+    WindowedPEAQCalculatorSettings,
 )
 from test._helpers import AudioStub, DataStub, attach
 
@@ -86,6 +91,78 @@ def test_normalise_scales_the_peak_to_the_amplitude():
 def test_normalise_respects_the_amplitude_scale():
     np.testing.assert_allclose(
         normalise(np.array([1.0, 2.0, 4.0]), amp_scale=2.0), [0.5, 1.0, 2.0]
+    )
+
+
+# --------------------------------------------------------------------------- #
+# PEAQ temporary files
+# --------------------------------------------------------------------------- #
+
+
+def _file_nodes(tmp_path):
+    original = AudioFile(MOCK_ORIGINAL, str(tmp_path / "original.wav"), samplerate=16000)
+    reconstructed = AudioFile(MOCK_RECONSTRUCTED, str(tmp_path / "reconstructed.wav"), samplerate=16000)
+    return original, reconstructed
+
+
+def test_peaq_removes_normalised_files_when_the_command_fails(tmp_path, monkeypatch):
+    original, reconstructed = _file_nodes(tmp_path)
+
+    def fail(*args, **kwargs):
+        raise RuntimeError("peaq failed")
+
+    monkeypatch.setattr(output_analyser.subprocess, "run", fail)
+
+    with pytest.raises(RuntimeError, match="peaq failed"):
+        PEAQCalculator(attach(PEAQCalculatorSettings())).run(original, reconstructed)
+
+    assert not (tmp_path / "original_norm.wav").exists()
+    assert not (tmp_path / "reconstructed_norm.wav").exists()
+
+
+def test_windowed_peaq_removes_temporary_files_when_the_command_fails(tmp_path, monkeypatch):
+    original, reconstructed = _file_nodes(tmp_path)
+    settings = attach(WindowedPEAQCalculatorSettings(), fs=16000, packet_size=4)
+
+    def one_intorno(*args, **kwargs):
+        return [0], [MOCK_ORIGINAL[:4]]
+
+    def fail(*args, **kwargs):
+        raise RuntimeError("peaq failed")
+
+    monkeypatch.setattr(output_analyser, "extract_intorni", one_intorno)
+    monkeypatch.setattr(output_analyser.subprocess, "run", fail)
+
+    with pytest.raises(RuntimeError, match="peaq failed"):
+        WindowedPEAQCalculator(settings).run(original, reconstructed, DataStub([0]))
+
+    for filename in ["original_norm.wav", "reconstructed_norm.wav", "original_chunk.wav", "reconstructed_chunk.wav"]:
+        assert not (tmp_path / filename).exists()
+
+
+def test_windowed_peaq_returns_di_and_odg_per_packet(tmp_path, monkeypatch):
+    original, reconstructed = _file_nodes(tmp_path)
+    settings = attach(WindowedPEAQCalculatorSettings(), fs=16000, packet_size=4)
+
+    def one_intorno(*args, **kwargs):
+        return [0], [MOCK_ORIGINAL[:4]]
+
+    monkeypatch.setattr(output_analyser, "extract_intorni", one_intorno)
+    monkeypatch.setattr(
+        output_analyser.subprocess,
+        "run",
+        lambda *args, **kwargs: type(
+            "CompletedProcess",
+            (),
+            {"stdout": "Objective Difference Grade: -1.5\nDistortion Index: -4.25"},
+        )(),
+    )
+
+    metric = WindowedPEAQCalculator(settings).run(original, reconstructed, DataStub([0])).get_error()
+
+    np.testing.assert_array_equal(
+        metric,
+        [[-4.25, -1.5], [0.0, 0.0], [0.0, 0.0], [0.0, 0.0], [0.0, 0.0]],
     )
 
 

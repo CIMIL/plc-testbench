@@ -1,5 +1,7 @@
 import subprocess
+from contextlib import contextmanager
 from math import gcd
+from pathlib import Path
 
 import numpy as np
 import numpy.random as npr
@@ -36,6 +38,47 @@ from .worker import Worker
 
 def normalise(x, amp_scale=1.0):
     return amp_scale * x / np.amax(np.abs(x))
+
+
+@contextmanager
+def _temporary_audio_files(
+    original: AudioFile,
+    reconstructed: AudioFile,
+    suffix: str,
+    original_data: np.ndarray,
+    reconstructed_data: np.ndarray,
+):
+    """Create paired temporary audio files and remove them on every exit path."""
+    original_path = original.get_path()
+    reconstructed_path = reconstructed.get_path()
+    temporary_original_path = original_path[:-4] + suffix + original_path[-4:]
+    temporary_reconstructed_path = reconstructed_path[:-4] + suffix + reconstructed_path[-4:]
+
+    try:
+        yield (
+            AudioFile.from_audio_file(original, new_data=original_data, new_path=temporary_original_path),
+            AudioFile.from_audio_file(
+                reconstructed,
+                new_data=reconstructed_data,
+                new_path=temporary_reconstructed_path,
+            ),
+        )
+    finally:
+        Path(temporary_original_path).unlink(missing_ok=True)
+        Path(temporary_reconstructed_path).unlink(missing_ok=True)
+
+
+@contextmanager
+def _normalised_audio_files(original: AudioFile, reconstructed: AudioFile):
+    """Create normalized PEAQ inputs and always remove their temporary files."""
+    with _temporary_audio_files(
+        original,
+        reconstructed,
+        "_norm",
+        normalise(original.get_data()),
+        normalise(reconstructed.get_data()),
+    ) as normalized_files:
+        yield normalized_files
 
 
 def _as_channel_matrix(audio: np.ndarray) -> np.ndarray:
@@ -329,34 +372,23 @@ class PEAQCalculator(OutputAnalyser):
             mode_flag = "--advanced"
         else:
             mode_flag = "--basic"
-        path = original_track_node.get_path()
-        new_path = path[:-4] + "_norm" + path[-4:]
-        new_data = normalise(original_track_node.get_data())
-        original_track_norm_file = AudioFile.from_audio_file(
-            original_track_node, new_data=new_data, new_path=new_path
-        )
-        path = reconstructed_track_node.get_path()
-        new_path = path[:-4] + "_norm" + path[-4:]
-        new_data = normalise(reconstructed_track_node.get_data())
-        reconstructed_track_norm_file = AudioFile.from_audio_file(
-            reconstructed_track_node, new_data=new_data, new_path=new_path
-        )
-        completed_process = subprocess.run(
-            [
-                "peaq",
-                mode_flag,
-                "--gst-plugin-path",
-                "/usr/lib/gstreamer-1.0/",
-                original_track_norm_file.get_path(),
-                reconstructed_track_norm_file.get_path(),
-            ],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-
-        original_track_norm_file.delete()
-        reconstructed_track_norm_file.delete()
+        with _normalised_audio_files(original_track_node, reconstructed_track_node) as (
+            original_track_norm_file,
+            reconstructed_track_norm_file,
+        ):
+            completed_process = subprocess.run(
+                [
+                    "peaq",
+                    mode_flag,
+                    "--gst-plugin-path",
+                    "/usr/lib/gstreamer-1.0/",
+                    original_track_norm_file.get_path(),
+                    reconstructed_track_norm_file.get_path(),
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
 
         peaq_output = completed_process.stdout
 
@@ -391,7 +423,6 @@ class WindowedPEAQCalculator(OutputAnalyser):
         intorno_length (int): Length of each loss-centered analysis region in
             milliseconds.
         mode_flag (str): Command-line flag selecting the GstPEAQ mode.
-        sign (int): Multiplier used to orient the selected PEAQ score.
     """
 
     def __init__(self, settings: WindowedPEAQCalculatorSettings) -> None:
@@ -407,14 +438,8 @@ class WindowedPEAQCalculator(OutputAnalyser):
         self.fs = self.settings.get("fs")
         self.packet_size = self.settings.get("packet_size")
         self.intorno_length = self.settings.get("intorno_length")
-        self.mode_flag = ""
-        self.sign = 1
         peaq_mode = self.settings.get("peaq_mode")
-        if peaq_mode == PEAQMode.basic:
-            self.mode_flag = "--basic"
-            self.sign = -1
-        elif peaq_mode == PEAQMode.advanced:
-            self.mode_flag = "--advanced"
+        self.mode_flag = "--advanced" if peaq_mode == PEAQMode.advanced else "--basic"
 
     def run(
         self,
@@ -426,93 +451,71 @@ class WindowedPEAQCalculator(OutputAnalyser):
         """Calculate PEAQ scores around packet-loss events.
 
         Returns:
-            (SimpleCalculatorData): Packet-aligned PEAQ metric values.
+            (SimpleCalculatorData): Packet-aligned DI and ODG values.
         """
-        path = original_track_node.get_path()
-        new_path = path[:-4] + "_norm" + path[-4:]
-        new_data = normalise(original_track_node.get_data())
-        original_track_norm_file = AudioFile.from_audio_file(
-            original_track_node, new_data=new_data, new_path=new_path
-        )
-        path = reconstructed_track_node.get_path()
-        new_path = path[:-4] + "_norm" + path[-4:]
-        new_data = normalise(reconstructed_track_node.get_data())
-        reconstructed_track_norm_file = AudioFile.from_audio_file(
-            reconstructed_track_node, new_data=new_data, new_path=new_path
-        )
-
-        lost_samples_idxs = lost_samples_idxs_data.get_data()
-        intorni_original = extract_intorni(
+        with _normalised_audio_files(original_track_node, reconstructed_track_node) as (
             original_track_norm_file,
-            lost_samples_idxs,
-            self.intorno_length,
-            self.fs,
-            self.packet_size,
-        )
-        intorni_reconstructed = extract_intorni(
             reconstructed_track_norm_file,
-            lost_samples_idxs,
-            self.intorno_length,
-            self.fs,
-            self.packet_size,
-        )
-
-        path = original_track_node.get_path()
-        original_path = path[:-4] + "_chunk" + path[-4:]
-        path = reconstructed_track_node.get_path()
-        reconstructed_path = path[:-4] + "_chunk" + path[-4:]
-        metric = np.zeros(len(original_track_node.get_data()) // self.packet_size)
-        for idx, intorno_original, intorno_reconstructed in self.progress_monitor(
-            zip(intorni_original[0], intorni_original[1], intorni_reconstructed[1]),
-            total=len(intorni_original[1]),
-            desc=f"{str(self)}|{id}",
         ):
-            original_intorno_file = AudioFile.from_audio_file(
+            lost_samples_idxs = lost_samples_idxs_data.get_data()
+            intorni_original = extract_intorni(
                 original_track_norm_file,
-                new_data=intorno_original,
-                new_path=original_path,
+                lost_samples_idxs,
+                self.intorno_length,
+                self.fs,
+                self.packet_size,
             )
-            reconstructed_intorno_file = AudioFile.from_audio_file(
+            intorni_reconstructed = extract_intorni(
                 reconstructed_track_norm_file,
-                new_data=intorno_reconstructed,
-                new_path=reconstructed_path,
-            )
-            completed_process = subprocess.run(
-                [
-                    "peaq",
-                    self.mode_flag,
-                    "--gst-plugin-path",
-                    "/usr/lib/gstreamer-1.0/",
-                    original_intorno_file.get_path(),
-                    reconstructed_intorno_file.get_path(),
-                ],
-                capture_output=True,
-                text=True,
-                check=False,
+                lost_samples_idxs,
+                self.intorno_length,
+                self.fs,
+                self.packet_size,
             )
 
-            original_intorno_file.delete()
-            reconstructed_intorno_file.delete()
+            metric = np.zeros((len(original_track_node.get_data()) // self.packet_size, 2))
+            for idx, intorno_original, intorno_reconstructed in self.progress_monitor(
+                zip(intorni_original[0], intorni_original[1], intorni_reconstructed[1]),
+                total=len(intorni_original[1]),
+                desc=f"{str(self)}|{id}",
+            ):
+                with _temporary_audio_files(
+                    original_track_norm_file,
+                    reconstructed_track_norm_file,
+                    "_chunk",
+                    intorno_original,
+                    intorno_reconstructed,
+                ) as (original_intorno_file, reconstructed_intorno_file):
+                    completed_process = subprocess.run(
+                        [
+                            "peaq",
+                            self.mode_flag,
+                            "--gst-plugin-path",
+                            "/usr/lib/gstreamer-1.0/",
+                            original_intorno_file.get_path(),
+                            reconstructed_intorno_file.get_path(),
+                        ],
+                        capture_output=True,
+                        text=True,
+                        check=False,
+                    )
 
-            peaq_output = completed_process.stdout
+                peaq_output = completed_process.stdout
 
-            peaq_odg_text = "Objective Difference Grade: "
-            peaq_di_text = "Distortion Index: "
-            if peaq_odg_text in peaq_output and peaq_di_text in peaq_output:
-                peaq_odg, peaq_di = peaq_output.split("\n", 1)
-                _, peaq_odg = peaq_odg.split(peaq_odg_text)
-                _, peaq_di = peaq_di.split(peaq_di_text)
-                try:
-                    metric[idx] = self.sign * float(peaq_odg)
-                except ValueError:
-                    print("The peaq program returned an invalid Objective Difference Grade:")
+                peaq_odg_text = "Objective Difference Grade: "
+                peaq_di_text = "Distortion Index: "
+                if peaq_odg_text in peaq_output and peaq_di_text in peaq_output:
+                    peaq_odg, peaq_di = peaq_output.split("\n", 1)
+                    _, peaq_odg = peaq_odg.split(peaq_odg_text)
+                    _, peaq_di = peaq_di.split(peaq_di_text)
+                    try:
+                        metric[idx] = [float(peaq_di), float(peaq_odg)]
+                    except ValueError:
+                        print("The peaq program returned invalid metric values:")
+                        print(completed_process.stdout)
+                else:
+                    print("The peaq program exited with the following errors:")
                     print(completed_process.stdout)
-            else:
-                print("The peaq program exited with the following errors:")
-                print(completed_process.stdout)
-
-        original_track_norm_file.delete()
-        reconstructed_track_norm_file.delete()
 
         return SimpleCalculatorData(metric)
 

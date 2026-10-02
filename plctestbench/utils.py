@@ -1,6 +1,5 @@
 import hashlib
 import math
-import operator
 import sys
 from collections.abc import Callable
 from pathlib import Path
@@ -174,8 +173,15 @@ def extract_intorni(
 
     intorno_samples = intorno_size * fs / 1000
     audio_data = audio_file.get_data()
-    # Normalise any numpy integer indices to plain Python ints.
-    lost_samples_idxs = [operator.index(idx) for idx in lost_samples_idxs]
+    # DataFile historically stored integer masks as float32. Accept those persisted
+    # masks when every value is integral, while keeping indices safe for slicing.
+    try:
+        normalized_indices = [int(idx) for idx in lost_samples_idxs]
+    except (TypeError, ValueError, OverflowError) as error:
+        raise ValueError("Lost-sample indices must be integers") from error
+    if any(normalized != original for normalized, original in zip(normalized_indices, lost_samples_idxs)):
+        raise ValueError("Lost-sample indices must be integers")
+    lost_samples_idxs = normalized_indices
     boundary_indexes = find_boundary_indexes(lost_samples_idxs)
     intorni = []
     packet_idxs = []

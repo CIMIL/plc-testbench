@@ -11,6 +11,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
+from plctestbench.file_wrapper import DataFile
 from plctestbench.filters import LinkwitzRileyCrossover, LinkwitzRileyFilter
 from plctestbench.low_cost_concealment import LowCostConcealment
 from plctestbench.utils import (
@@ -104,6 +105,34 @@ def test_extract_intorni_centers_the_window_on_the_loss():
     assert packet_idxs == [10]
     assert len(intorni) == 1
     np.testing.assert_array_equal(intorni[0][:, 0], np.arange(91, 111))
+
+
+def test_data_file_preserves_integer_mask_indices(tmp_path):
+    mask = DataFile(np.array([64, 128], dtype=np.int64), str(tmp_path / "mask.npy"))
+
+    assert np.issubdtype(mask.get_data().dtype, np.integer)
+    np.testing.assert_array_equal(mask.get_data(), [64, 128])
+
+
+def test_extract_intorni_accepts_integral_float32_indices_from_persisted_masks():
+    audio = np.arange(200, dtype=np.float32).reshape(200, 1)
+    packet_idxs, intorni = extract_intorni(
+        AudioStub(audio), np.array([100, 101, 102], dtype=np.float32), intorno_size=20, fs=1000, packet_size=10
+    )
+
+    assert packet_idxs == [10]
+    np.testing.assert_array_equal(intorni[0][:, 0], np.arange(91, 111))
+
+
+def test_extract_intorni_rejects_fractional_indices():
+    with pytest.raises(ValueError, match="must be integers"):
+        extract_intorni(
+            AudioStub(np.arange(200, dtype=np.float32)),
+            np.array([100.5], dtype=np.float32),
+            intorno_size=20,
+            fs=1000,
+            packet_size=10,
+        )
 
 
 def test_force_single_loss_per_stimulus_keeps_close_packets_together():

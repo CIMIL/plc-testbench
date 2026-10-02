@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 import pickle
 from pathlib import Path
 from typing import Any, Iterator
@@ -22,9 +21,15 @@ def calculate_hash(*args) -> int:
 
 
 class FileWrapper(object):
-    def __init__(self, data=None, path: str = None, persist=True) -> None:
+    def __init__(
+        self, data=None, path: str = None, persist=True, preserve_integer_dtype=False
+    ) -> None:
         self.data = (
-            np.ascontiguousarray(data.astype(DEFAULT_DTYPE))
+            np.ascontiguousarray(
+                data
+                if preserve_integer_dtype and np.issubdtype(data.dtype, np.integer)
+                else data.astype(DEFAULT_DTYPE)
+            )
             if isinstance(data, np.ndarray)
             else data
         )
@@ -72,7 +77,7 @@ class FileWrapper(object):
         pass
 
     def delete(self) -> None:
-        os.remove(self.path)
+        Path(self.path).unlink(missing_ok=True)
 
     def __hash__(self):
         return self.hash
@@ -164,18 +169,26 @@ class AudioFile(FileWrapper):
 
 class DataFile(FileWrapper):
     def __init__(self, data=None, path: str = None, persist=True) -> None:
-        super().__init__(data, path, persist)
+        super().__init__(data, path, persist, preserve_integer_dtype=True)
 
     def save(self) -> None:
-        with open(self.path, "wb") as file:
-            pickle.dump(self.data, file)
+        try:
+            with open(self.path, "wb") as file:
+                pickle.dump(self.data, file)
+        except OSError as error:
+            raise OSError(f"Could not write data file: {self.path}") from error
 
     def load(self) -> None:
-        with open(self.path, "rb") as file:
-            try:
-                self.data = pickle.load(file)
-            except pickle.UnpicklingError:
-                self.data = None
+        try:
+            with open(self.path, "rb") as file:
+                try:
+                    # Data files are trusted artifacts created by the testbench.
+                    # pi-lens-ignore: python-insecure-deserialization
+                    self.data = pickle.load(file)
+                except pickle.UnpicklingError:
+                    self.data = None
+        except OSError as error:
+            raise OSError(f"Could not read data file: {self.path}") from error
 
 
 class OutputAnalysis:
