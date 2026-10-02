@@ -24,15 +24,15 @@ from plctestbench.settings import (
     LinearCrossfadeSettings,
     LowCostPLCSettings,
     NoCrossfadeSettings,
+    PARCnetConfigPreset,
+    PARCnetPLCSettings,
     PESQCalculatorSettings,
     PESQMode,
     PLCMOSCalculatorSettings,
     Settings,
     ZerosPLCSettings,
 )
-
 from test._helpers import attach
-
 
 # --------------------------------------------------------------------------- #
 # Validation bounds
@@ -105,6 +105,28 @@ def test_pesq_settings_expose_supported_modes_and_defaults():
     assert PESQCalculatorSettings(PESQMode.nb).get("pesq_mode").value == "nb"
     with pytest.raises(ValueError):
         PESQCalculatorSettings(cast(PESQMode, "unsupported"))
+
+
+def test_parcnet_accepts_serialized_preset_values():
+    settings = PARCnetPLCSettings(config_preset="is2_mplc_challenge")
+
+    assert settings.get("dl_fs") == 44100
+    assert settings.get("extra_packet_dim") == 256
+    assert settings.get("nn_fade_dim") == 64
+
+
+def test_enum_with_different_member_name_round_trips():
+    serialized = PLCMOSCalculatorSettings("2").to_dict()
+    restored = Settings(serialized)
+
+    assert restored.get("plcmos_model").value == "2"
+    assert restored.to_dict() == serialized
+
+
+def test_settings_restore_legacy_enum_values():
+    restored = Settings({"config_preset-PARCnetConfigPreset": "custom"})
+
+    assert restored.get("config_preset") is PARCnetConfigPreset.custom
 
 
 # --------------------------------------------------------------------------- #

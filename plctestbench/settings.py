@@ -28,7 +28,13 @@ class Settings(object):
                     new_value = clazz()
                     new_value.settings = self.from_dict(value)
                 else:
-                    new_value = get_class(class_name)(value)
+                    enum_class = get_class(class_name)
+                    try:
+                        new_value = enum_class[value]
+                    except KeyError:
+                        # Accept dictionaries produced by older callers that
+                        # stored the enum value instead of its member name.
+                        new_value = enum_class(value)
                 return key, new_value
             elif last_special_char == "~":
                 key, idx = key.split("~")
@@ -833,7 +839,9 @@ class PARCnetPLCSettings(PLCSettings):
         crossover_order: int = None,
         dl_model_path: str = "dl_models/parcnet-is2_mplc_challenge.onnx",
         dl_fs: int = 44100,
-        config_preset: PARCnetConfigPreset = PARCnetConfigPreset.is2_mplc_challenge,
+        config_preset: str | PARCnetConfigPreset = (
+            PARCnetConfigPreset.is2_mplc_challenge
+        ),
         extra_packet_dim: int = 256,
         ar_order: int = 256,
         ar_fade_dim: int = 8,
@@ -842,6 +850,7 @@ class PARCnetPLCSettings(PLCSettings):
         nn_fade_dim: int = 64,
     ):
         super().__init__(crossfade, fade_in, crossfade_frequencies, crossover_order)
+        config_preset = PARCnetConfigPreset(config_preset)
         self.settings["dl_model_path"] = str(relative_to_root(dl_model_path))
         self.settings["ar_order"] = ar_order
         self.settings["ar_fade_dim"] = ar_fade_dim

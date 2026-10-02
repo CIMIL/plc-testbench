@@ -1,14 +1,15 @@
 import subprocess
+from math import gcd
 
-import librosa
 import numpy as np
 import numpy.random as npr
 from pesqc2 import pesq
+from scipy.signal import resample_poly
 
 from .file_wrapper import AudioFile, DataFile, PEAQData, SimpleCalculatorData
 from .listening_tests import ListeningTest
-from .plcmos import PLCMOSEstimator
 from .perceptual_metric import PerceptualMetric
+from .plcmos import PLCMOSEstimator
 from .settings import (
     HumanCalculatorSettings,
     MAECalculatorSettings,
@@ -16,13 +17,13 @@ from .settings import (
     PEAQCalculatorSettings,
     PEAQMode,
     PerceptualCalculatorSettings,
+    PESQCalculatorSettings,
+    PESQMode,
+    PLCMOSCalculatorSettings,
+    PLCMOSModel,
     Settings,
     SpectralEnergyCalculatorSettings,
     WindowedPEAQCalculatorSettings,
-    PLCMOSCalculatorSettings,
-    PLCMOSModel,
-    PESQCalculatorSettings,
-    PESQMode,
 )
 from .utils import (
     dummy_progress_bar,
@@ -40,6 +41,24 @@ def normalise(x, amp_scale=1.0):
 def _as_channel_matrix(audio: np.ndarray) -> np.ndarray:
     """Return audio in ``(samples, channels)`` form."""
     return audio[:, np.newaxis] if audio.ndim == 1 else audio
+
+
+def _resample_channel_matrix(
+    audio: np.ndarray, original_samplerate: float, target_samplerate: int = 16000
+) -> np.ndarray:
+    """Resample audio without importing librosa's optional legacy dependencies."""
+    channels = _as_channel_matrix(np.asarray(audio))
+    original_samplerate = int(original_samplerate)
+    if original_samplerate == target_samplerate:
+        return channels
+
+    divisor = gcd(original_samplerate, target_samplerate)
+    return resample_poly(
+        channels,
+        target_samplerate // divisor,
+        original_samplerate // divisor,
+        axis=0,
+    )
 
 
 class OutputAnalyser(Worker):
@@ -817,27 +836,21 @@ class PLCMOSCalculator(OutputAnalyser):
             plcmos_model == PLCMOSModel.plcmos_0 and request_intrusive
         )
 
-        # Resample to 16 KHz
-        reconstructed_track_node_resampled = librosa.resample(
-            reconstructed_track_node.get_data().T,
-            orig_sr=reconstructed_track_node.get_samplerate(),
-            target_sr=16000,
-        ).T
-
-        original_track_node_resampled = librosa.resample(
-            original_track_node.get_data().T,
-            orig_sr=original_track_node.get_samplerate(),
-            target_sr=16000,
-        ).T
-
-        reconstructed_track_node_resampled = _as_channel_matrix(
-            reconstructed_track_node_resampled
+        reconstructed_track_node_resampled = _resample_channel_matrix(
+            reconstructed_track_node.get_data(),
+            reconstructed_track_node.get_samplerate(),
         )
-        original_track_node_resampled = _as_channel_matrix(
-            original_track_node_resampled
+        original_track_node_resampled = _resample_channel_matrix(
+            original_track_node.get_data(),
+            original_track_node.get_samplerate(),
         )
-        if reconstructed_track_node_resampled.shape[1] != original_track_node_resampled.shape[1]:
-            raise ValueError("Original and reconstructed tracks must have the same channels")
+        if (
+            reconstructed_track_node_resampled.shape[1]
+            != original_track_node_resampled.shape[1]
+        ):
+            raise ValueError(
+                "Original and reconstructed tracks must have the same channels"
+            )
 
         score = 0
         channel_count = original_track_node_resampled.shape[1]
@@ -888,26 +901,15 @@ class PESQCalculator(OutputAnalyser):
         """
         pesq_mode: PESQMode = self.settings.get("pesq_mode")
 
-        # Resample to 16 KHz
-        reconstructed_track_node_resampled = librosa.resample(
-            reconstructed_track_node.get_data().T,
-            orig_sr=reconstructed_track_node.get_samplerate(),
-            target_sr=16000,
-        ).T
-
-        original_track_node_resampled = librosa.resample(
-            original_track_node.get_data().T,
-            orig_sr=original_track_node.get_samplerate(),
-            target_sr=16000,
-        ).T
-
-        # Downmix to mono after normalizing mono and multichannel inputs to the
-        # same samples-by-channels representation.
-        reconstructed_track_node_resampled = _as_channel_matrix(
-            reconstructed_track_node_resampled
+        # Resample and downmix to mono after normalizing mono and multichannel
+        # inputs to the same samples-by-channels representation.
+        reconstructed_track_node_resampled = _resample_channel_matrix(
+            reconstructed_track_node.get_data(),
+            reconstructed_track_node.get_samplerate(),
         ).mean(axis=1)
-        original_track_node_resampled = _as_channel_matrix(
-            original_track_node_resampled
+        original_track_node_resampled = _resample_channel_matrix(
+            original_track_node.get_data(),
+            original_track_node.get_samplerate(),
         ).mean(axis=1)
 
         score = pesq(

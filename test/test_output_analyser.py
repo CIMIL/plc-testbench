@@ -27,6 +27,7 @@ from plctestbench.output_analyser import (
     PLCMOSCalculator,
     SimpleCalculator,
     SpectralEnergyCalculator,
+    _resample_channel_matrix,
     normalise,
 )
 from plctestbench.perceptual_metric import PerceptualMetric
@@ -38,7 +39,6 @@ from plctestbench.settings import (
     PLCMOSCalculatorSettings,
     SpectralEnergyCalculatorSettings,
 )
-
 from test._helpers import AudioStub, DataStub, attach
 
 N = 8
@@ -184,6 +184,15 @@ def test_output_analyser_base_class_constructs_with_primed_settings():
 # --------------------------------------------------------------------------- #
 # Whole-track speech-quality metrics
 # --------------------------------------------------------------------------- #
+
+
+def test_quality_metric_resampler_preserves_channel_layout():
+    audio = np.ones((48000, 2), dtype=np.float32)
+
+    resampled = _resample_channel_matrix(audio, 48000)
+
+    assert resampled.shape == (16000, 2)
+    assert np.isfinite(resampled).all()
 
 
 @pytest.mark.parametrize("channels", [1, 2])
