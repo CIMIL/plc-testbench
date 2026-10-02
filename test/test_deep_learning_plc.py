@@ -22,7 +22,7 @@ from plctestbench.settings import PARCnetPLCSettings, VermaPLCSettings
 from test._helpers import attach, seeded_sine
 
 VERMA_PACKET_SIZE = 128
-PARCNET_PACKET_SIZE = 256
+PARCNET_PACKET_SIZE = 512
 DL_FS = 16000
 
 

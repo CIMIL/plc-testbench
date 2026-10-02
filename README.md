@@ -304,7 +304,7 @@ The deep-learning PLC algorithms (`VermaPLC` and `PARCnetPLC`) run on **ONNX Run
 | Algorithm | Model | Notes |
 | --- | --- | --- |
 | `VermaPLC` | `model_bs256_100epochs_0.01_1e-3_1e-7.onnx` | Exported from the original Keras model with `tf2onnx`. Two inputs: `cnn_input`, the mel spectrogram `(1, 100, 200, 1)`, and `concat_input`, the last packet `(1, 128)`. |
-| `PARCnetPLC` | `parcnet-is2_mplc_challenge.onnx` | Exported from the original TorchScript checkpoint with `torch.onnx.export`. Single input: `nn_context` `(1, 1, 2560)`. |
+| `PARCnetPLC` | `parcnet-is2_mplc_challenge.onnx` | Exported from the PARCnet-IS² checkpoint with `torch.onnx.export`. Single input: `nn_context` `(1, 1, 4864)`, comprising eight 512-sample context packets, one 512-sample prediction packet, and 256 extra crossfade samples. |
 
 The models are pre-converted and committed, so no conversion step is needed to run the testbench (`PLCMOSEstimator` already used ONNX). The conversion itself was a one-off operation; no converter is shipped with the repository. It was performed in an isolated environment (TensorFlow 2.15 + `tf2onnx` for Verma, PyTorch for PARCnet):
 
@@ -325,14 +325,14 @@ tf2onnx.convert.from_keras(
 import torch
 module = torch.jit.load("dl_models/parcnet-is2_mplc_challenge.pth", map_location="cpu").eval()
 torch.onnx.export(
-    module, (torch.randn(1, 1, 2560),),
+    module, (torch.randn(1, 1, 4864),),
     "dl_models/parcnet-is2_mplc_challenge.onnx",
     input_names=["nn_context"], output_names=["nn_pred"],
     opset_version=17, dynamo=False,
 )
 ```
 
-`VermaPLC` expects the packet size used by its exported model (**128** samples) and a mel spectrogram of `(100, 200, 1)`. Changing `packet_size`, `fs_dl`, `context_length`, `hop_size`, `window_length` or `num_mel_bins` raises a descriptive error unless the model is re-exported accordingly.
+`VermaPLC` expects the packet size used by its exported model (**128** samples) and a mel spectrogram of `(100, 200, 1)`. Changing `packet_size`, `fs_dl`, `context_length`, `hop_size`, `window_length` or `num_mel_bins` raises a descriptive error unless the model is re-exported accordingly. The bundled PARCnet-IS² model expects **512-sample packets**, matching the upstream 2024 Music PLC Challenge baseline.
 
 A basic smoke/parity script exercising both models is available:
 
