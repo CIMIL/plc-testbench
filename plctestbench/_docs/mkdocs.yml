@@ -13,7 +13,7 @@ nav:
   - Guides:
       - Configuration: guides/configuration.md
       - Models and metrics: guides/models-and-metrics.md
-      - Human listening tests: guides/study-hub.md
+      - Human listening tests: guides/human-listening.md
       - Crossfades: guides/crossfades.md
       - Advanced PLC: guides/advanced-plc.md
       - Serving in an application: guides/serving.md
