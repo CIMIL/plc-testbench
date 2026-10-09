@@ -179,6 +179,94 @@ Reference and anchor ratings are quality controls rather than primary PLC
 comparisons. Too few participants or an unidentifiable statistical model can leave
 inference unavailable even when descriptive results are present.
 
+### Statistical comparisons: LMM + Tukey
+
+New analyses fit a **linear mixed-effects model**, for both balanced and incomplete
+selected data. PLC condition is a fixed effect; source track and condition-by-track
+effects are included when there are multiple tracks. Random intercepts account for
+listeners, each listener's trial context (including repetitions), and shared audio
+excerpts. Participant-condition random deviations allow listener preferences to
+vary; if they cannot be fitted, a documented random-intercept fallback is attempted.
+The same excerpt is shared across listeners, not treated as a new independent
+piece for each listener.
+
+The overall test is a maximum-likelihood likelihood-ratio test of condition and
+condition-by-track effects jointly. Post-hoc comparisons use **estimated marginal
+condition means**, averaging selected tracks equally, with **Tukey-adjusted
+p-values and simultaneous 95% intervals** over all PLC pairs. Five PLC conditions
+produce ten comparisons. Reference and anchor are outside this **primary** family.
+
+The current Python implementation uses an **asymptotic studentized-range
+approximation** (infinite degrees of freedom), not finite-sample
+Satterthwaite/Kenward–Roger inference. Multiplicity calibration is approximate
+when contrast variances differ; small studies need particular caution. Model
+inference requires at least five listeners, three distinct excerpts and two PLC
+conditions, but these thresholds do not ensure adequate power. The model assumes
+approximately continuous scores and ignorable missingness, and does not repair
+non-random missingness or establish generalization to all source tracks.
+Descriptive listener-bootstrap intervals are separate from these model contrast
+intervals. If the joint observed-information covariance is ill-conditioned but
+fixed effects remain estimable, a documented asymptotic GLS covariance conditional
+on the fitted variance components is used; unestimable models remain unavailable.
+Existing development test studies were reanalyzed once with this
+method; the application no longer renders legacy ANOVA results.
+
+### Finalized-study charts
+
+After finalization, the Hub presents the full report: text, two summary/comparison
+tables, a descriptive **Boxplot / Violin** chart, and four statistical/listener
+plots. The shared **Show reference & anchor** toggle is **on by default**, applying
+to **both tables and all five plots** in this order: **Anchor → PLC conditions
+(configured order) → Hidden reference**.
+
+With QC shown, the three inferential plots and pairwise table use a **separate, clearly labeled exploratory
+QC-inclusive LMM and Tukey comparison family**. Two PLC conditions plus reference
+and anchor produce six comparisons, rather than the primary family's one. Even
+PLC-to-PLC intervals and p-values may change because the model and family change.
+Controls remain quality controls, not PLC performance conditions; their endpoint
+scores merit extra caution about continuous-score model assumptions. Switching
+the toggle off restores the frozen PLC-only model results. The descriptive table
+adds frozen participant-bootstrap QC summaries; its PLC summary cells are unchanged.
+The primary frozen analysis itself is never overwritten by the display selection.
+
+The plots cover all source tracks (the distribution plot also offers a per-track
+aggregation):
+
+- **Listener score distributions:** choose Boxplot or Violin and overall or per-track
+  aggregation. Each observation is a completed, included listener's track-balanced
+  mean. These are descriptive distributions, not confidence intervals.
+
+- **Estimated marginal means:** LMM-estimated quality scores with pointwise 95%
+  normal-Wald confidence intervals. These are not Tukey-adjusted intervals;
+  overlapping mean intervals do not determine pairwise significance.
+- **Tukey-adjusted pairwise differences:** a horizontal forest plot of first-minus-
+  second effects with simultaneous 95% intervals and a dashed zero line. Filled
+  circles indicate adjusted p < .05; hollow diamonds indicate nonsignificance.
+- **Pairwise significance heatmap:** adjusted p-values over the full comparison
+  family. Symbols identify p < .001 (***), .01 (**), or .05 (*); `ns` means
+  nonsignificant, not equivalent. Diagonal cells are not tests, and `?` means
+  unavailable. Tooltips show signed row-minus-column effects and intervals.
+- **Participant-level scores:** one descriptive line per included listener,
+  preserving genuine zero and missing-score gaps. Repetitions are averaged within
+  excerpts, excerpts within tracks, and tracks equally within each listener.
+  These are listener averages, not model predictions or independent trial samples.
+
+All charts support tooltips, light/dark themes and responsive layouts, with
+collapsible data tables for nonvisual inspection. Full condition identities remain
+in tooltips and tables when long axis labels are shortened. QC labels are explicit;
+PLC colors stay consistent across toggle changes. The toggle reuses the frozen
+ratings download without additional requests. If the selected inference is
+unavailable, the model charts explain why while the
+participant chart can still display valid scores. A failed ratings download has
+its own retry button and does not hide available model results. Distribution and
+listener plots share one frozen ratings download; changing QC scope preserves the
+selected plot style and aggregation.
+
+In the analyzer, a selected finalized **HumanCalculator** shows **only these five
+plots**, their controls, legends, tooltips and a compact primary/exploratory scope
+label. Report tables, explanatory sections and model diagnostics are reserved for
+the Study Hub. Unavailable/error notices remain visible in either view.
+
 Two export controls sit below the participant section:
 
 - **Export ratings → CSV:** raw ratings for spreadsheets.
