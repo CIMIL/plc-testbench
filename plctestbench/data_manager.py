@@ -4,6 +4,7 @@ from anytree import LevelOrderIter, search
 
 from .database_manager import DatabaseManager, database_manager_factory
 from .models import Run, RunStatus, TestbenchConfiguration, User
+from .human_listening import HumanCalculatorData
 from .node import (
     LostSamplesMaskNode,
     Node,
@@ -68,18 +69,25 @@ class DataManager(object):
         Run the testbench.
         """
         self._set_run_status(RunStatus.RUNNNING)
+        awaiting_input = False
         try:
             for root_node in self.progress_monitor(self)(
                 self.root_nodes, desc="Audio Tracks"
             ):
                 for node in LevelOrderIter(root_node):
                     node.run()
+                    if isinstance(node, OutputAnalysisNode):
+                        data = node.get_data()
+                        if isinstance(data, HumanCalculatorData) and data.status == "prepared":
+                            awaiting_input = True
         except KeyboardInterrupt:
-            print("Simulation interrupted by user.")
-            return
-        finally:
             self._set_run_status(RunStatus.FAILED)
-        self._set_run_status(RunStatus.COMPLETED)
+            print("Simulation interrupted by user.")
+            raise
+        except Exception:
+            self._set_run_status(RunStatus.FAILED)
+            raise
+        self._set_run_status(RunStatus.AWAITING_INPUT if awaiting_input else RunStatus.COMPLETED)
 
     def set_workers(
         self,

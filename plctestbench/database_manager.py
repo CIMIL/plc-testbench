@@ -46,6 +46,10 @@ class DatabaseManager(metaclass=Singleton):
     def find_node(self, node_id, collection_name):
         raise NotImplementedError("To be overridden!")
 
+    def update_node_result(self, node_id, collection_name, expected_hash, filepath, file_hash):
+        """Compare-and-set a result artifact without deleting the cached node."""
+        raise NotImplementedError("To be overridden!")
+
     @abstractmethod
     def delete_node(self, node_id):
         raise NotImplementedError("To be overridden!")
@@ -146,6 +150,14 @@ class MongoDatabaseManager(DatabaseManager):
         """
         database = self.get_database()
         return database[collection_name].find_one({"_id": node_id})
+
+    def update_node_result(self, node_id, collection_name, expected_hash, filepath, file_hash):
+        result = self.get_database()[collection_name].update_one(
+            {"_id": node_id, "file_hash": expected_hash},
+            {"$set": {"filepath": filepath, "file_hash": file_hash, "persistent": True}},
+        )
+        if result.matched_count != 1:
+            raise ValueError("Cached node changed or disappeared during result finalization")
 
     def delete_node(self, node_id):
         """
@@ -284,6 +296,14 @@ class TinyDBDatabaseManager(DatabaseManager):
         """
         database: TinyDB = self.get_database()
         return database.table(collection_name).get(where("_id") == node_id)
+
+    def update_node_result(self, node_id, collection_name, expected_hash, filepath, file_hash):
+        updated = self.get_database().table(collection_name).update(
+            {"filepath": filepath, "file_hash": file_hash, "persistent": True},
+            (where("_id") == node_id) & (where("file_hash") == expected_hash),
+        )
+        if len(updated) != 1:
+            raise ValueError("Cached node changed or disappeared during result finalization")
 
     def delete_node(self, node_id):
         """

@@ -101,7 +101,9 @@ def compute_hash(obj):
     """
     This function returns the hash of the given object.
     """
-    return int.from_bytes(hashlib.md5(str(obj).encode("utf-8")).digest()[:7], "little")
+    # Legacy artifact IDs must remain stable; never use this for security tokens.
+    # pi-lens-ignore: python-weak-hash
+    return int.from_bytes(hashlib.md5(str(obj).encode("utf-8"), usedforsecurity=False).digest()[:7], "little")
 
 
 def escape_email(email):
@@ -163,44 +165,27 @@ def relative_to_root(path):
 def extract_intorni(
     audio_file, lost_samples_idxs, intorno_size, fs, packet_size, unique=False
 ):
-    def find_boundary_indexes(lost_samples_idxs):
-        boundary_indexes = []
-        start_idx = None
-        end_idx = None
-        for idx in lost_samples_idxs:
-            if start_idx is None:
-                start_idx = idx
-                end_idx = idx
-            elif idx == end_idx + 1:
-                end_idx = idx
-            else:
-                boundary_indexes.append((start_idx, end_idx))
-                start_idx = None
-            if idx == lost_samples_idxs[-1]:
-                boundary_indexes.append((start_idx, end_idx))
-        return boundary_indexes
+    # Import lazily: file_wrapper imports this module during initialization.
+    from .human_listening import loss_events
 
-    intorno_samples = intorno_size * fs / 1000
+    intorno_samples = round(intorno_size * fs / 1000)
+    if intorno_samples < 1 or packet_size < 1:
+        raise ValueError("Excerpt and packet sizes must be positive")
     audio_data = audio_file.get_data()
-    # DataFile historically stored integer masks as float32. Accept those persisted
-    # masks when every value is integral, while keeping indices safe for slicing.
     try:
-        normalized_indices = [int(idx) for idx in lost_samples_idxs]
-    except (TypeError, ValueError, OverflowError) as error:
-        raise ValueError("Lost-sample indices must be integers") from error
-    if any(normalized != original for normalized, original in zip(normalized_indices, lost_samples_idxs)):
-        raise ValueError("Lost-sample indices must be integers")
-    lost_samples_idxs = normalized_indices
-    boundary_indexes = find_boundary_indexes(lost_samples_idxs)
+        boundary_indexes = loss_events(lost_samples_idxs, len(audio_data))
+    except ValueError as error:
+        raise ValueError(f"Lost-sample indices must be integers within audio bounds: {error}") from error
     intorni = []
     packet_idxs = []
     for start_idx, end_idx in boundary_indexes:
-        center_idx = (start_idx + end_idx) // 2
-        start_sample = math.trunc(center_idx - intorno_samples // 2)
-        end_sample = math.trunc(center_idx + intorno_samples // 2)
-        intorno = audio_data[start_sample:end_sample]
-        if len(intorno) == 0:
+        center_idx = (start_idx + end_idx - 1) // 2
+        start_sample = center_idx - intorno_samples // 2
+        end_sample = start_sample + intorno_samples
+        # Do not wrap negative NumPy slices or return truncated boundary clips.
+        if start_sample < 0 or end_sample > len(audio_data):
             continue
+        intorno = audio_data[start_sample:end_sample]
         if unique:
             intorni.append(intorno.copy())
         else:
@@ -230,7 +215,9 @@ def force_single_loss_per_stimulus(lost_samples_idxs, fs, spacing, samples_per_p
 
 
 def fade_in(audio, fs, fade_in_time) -> None:
-    fade_in_samples = math.trunc(fade_in_time * fs / 1000)
+    fade_in_samples = min(len(audio), max(0, math.trunc(fade_in_time * fs / 1000)))
+    if fade_in_samples == 0:
+        return
     fade_in_window = np.linspace(0, 1, fade_in_samples, dtype=audio.dtype)
     if audio.ndim > 1:
         fade_in_window = fade_in_window[:, np.newaxis]
@@ -238,7 +225,9 @@ def fade_in(audio, fs, fade_in_time) -> None:
 
 
 def fade_out(audio, fs, fade_out_time) -> None:
-    fade_out_samples = math.trunc(fade_out_time * fs / 1000)
+    fade_out_samples = min(len(audio), max(0, math.trunc(fade_out_time * fs / 1000)))
+    if fade_out_samples == 0:
+        return
     fade_out_window = np.linspace(1, 0, fade_out_samples, dtype=audio.dtype)
     if audio.ndim > 1:
         fade_out_window = fade_out_window[:, np.newaxis]
@@ -247,13 +236,13 @@ def fade_out(audio, fs, fade_out_time) -> None:
 
 def leading_silence(audio, fs, silence_time) -> np.ndarray:
     silence_samples = math.trunc(silence_time * fs / 1000)
-    silence = np.zeros((silence_samples, audio.shape[1]), dtype=audio.dtype)
+    silence = np.zeros((silence_samples, *audio.shape[1:]), dtype=audio.dtype)
     return np.concatenate((silence, audio), axis=0)
 
 
 def trailing_silence(audio, fs, silence_time) -> np.ndarray:
     silence_samples = math.trunc(silence_time * fs / 1000)
-    silence = np.zeros((silence_samples, audio.shape[1]), dtype=audio.dtype)
+    silence = np.zeros((silence_samples, *audio.shape[1:]), dtype=audio.dtype)
     return np.concatenate((audio, silence), axis=0)
 
 
@@ -269,20 +258,13 @@ def is_loud_enough(audio_data, audio_reference, threshold=-30) -> bool:
     Returns:
         bool: True if the average loudness is above the threshold, False otherwise.
     """
-    # Calculate the RMS (root mean square) of the audio data
-    rms = np.sqrt(np.mean(np.square(audio_data)))
-
-    # Calculate the RMS (root mean square) of the audio reference
-    rms_reference = np.sqrt(np.mean(np.square(audio_reference)))
-
-    # Convert RMS to dB
-    db = 20 * np.log10(rms)
-    db_reference = 20 * np.log10(rms_reference)
-
-    loud_enough = db > db_reference + threshold
-
-    # Compare the average loudness to the threshold
-    return loud_enough
+    if not np.size(audio_data) or not np.size(audio_reference):
+        return False
+    if not np.all(np.isfinite(audio_data)) or not np.all(np.isfinite(audio_reference)) or not np.isfinite(threshold):
+        return False
+    rms = np.sqrt(np.mean(np.square(audio_data, dtype=np.float64)))
+    rms_reference = np.sqrt(np.mean(np.square(audio_reference, dtype=np.float64)))
+    return bool(rms_reference > 0 and rms > rms_reference * 10 ** (threshold / 20))
 
 
 class ObjectFactory:

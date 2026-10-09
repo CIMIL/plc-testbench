@@ -1,9 +1,12 @@
 from copy import deepcopy
+from dataclasses import replace
+from pathlib import Path
 
 import numpy as np
 from anytree import NodeMixin
 
 from plctestbench.file_wrapper import AudioFile, DataFile, FileWrapper
+from plctestbench.human_listening import HumanCalculatorData
 from plctestbench.settings import Settings
 from plctestbench.utils import dummy_progress_bar
 from plctestbench.worker import Worker
@@ -17,7 +20,7 @@ class Node(BaseNode, NodeMixin):
     def __init__(
         self,
         file: FileWrapper = None,
-        worker: Worker = None,
+        worker: type[Worker] | None = None,
         settings: Settings = None,
         absolute_path: str = None,
         parent=None,
@@ -90,7 +93,7 @@ class Node(BaseNode, NodeMixin):
         current_node = self._load_from_database()
         if current_node:
             self.persistent = current_node["persistent"]
-        if self.persistent is False or current_node is None:
+        if not self.persistent or current_node is None:
             self._run()
             self._save_to_database()
         else:
@@ -273,6 +276,39 @@ class OutputAnalysisNode(Node):
 
     def get_reconstructed_track_node(self) -> ReconstructedTrackNode:
         return self.ancestors[2]
+
+    def finalize_human_result(self, result: HumanCalculatorData, destination: str) -> None:
+        """Persist a finalized standalone result and refresh the cache reference.
+
+        Use a fresh study-specific destination, not the prepared artifact path.
+        The node must already hold the corresponding prepared bundle. This is
+        for standalone, exclusively owned nodes; platforms sharing cached nodes
+        across runs must instead keep final results in run-scoped storage.
+
+        Raises:
+            ValueError: The node/result does not match or its cache changed.
+            FileExistsError: The destination is already occupied.
+        """
+        current = self.file.get_data()
+        if not isinstance(current, HumanCalculatorData) or current.status != "prepared":
+            raise ValueError("Only a prepared human node can be finalized")
+        if result.status != "finalized" or not result.study_id:
+            raise ValueError("A finalized result with a study ID is required")
+        prepared_result = replace(result, status="prepared", study_id=None, responses=())
+        if hash(prepared_result) != hash(current):
+            raise ValueError("Finalized material does not match the prepared condition bundle")
+        destination_path = Path(destination)
+        if destination_path.exists():
+            raise FileExistsError(f"Finalized artifact already exists: {destination}")
+        finalized_file = DataFile(result, str(destination_path))
+        # Keep the prepared WAV/material cache intact, and change only the
+        # result reference/hash. A later cached run must not regenerate it.
+        self._get_database().update_node_result(
+            self.get_id(), type(self).__name__, str(hash(self.file)),
+            finalized_file.get_path(), str(hash(finalized_file)),
+        )
+        self.file = finalized_file
+        self.persistent = True
 
     def _run(self) -> None:
         original_track = self.get_original_track()

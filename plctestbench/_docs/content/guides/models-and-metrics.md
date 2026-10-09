@@ -72,19 +72,12 @@ The following analysers are exposed by the default OpenPLC Studio module catalog
 | `PerceptualCalculator` | Uses a constant-Q time-frequency representation to estimate the audibility of glitches around packet losses. It is intended specifically for localized PLC artifacts. | Loss-centered, packet-aligned |
 | `PLCMOSCalculator` | Uses Microsoft's PLCMOS ONNX models to estimate perceived PLC quality. Depending on the model version it can operate intrusively with the original reference or non-intrusively on reconstructed audio alone. Channel scores are averaged. | Whole track |
 | `PESQCalculator` | Computes a PESQ speech-quality score after resampling to 16 kHz and downmixing to mono. Narrowband and wideband modes are supported by the underlying `pesqc2` implementation. | Whole track |
-
-### Additional Python-package analysers
-
-These concrete analysers are implemented in the package but are not included in the default OpenPLC Studio module catalogue.
-
-| Module | Description | Result scope |
-| --- | --- | --- |
-| `HumanCalculator` | Selects suitable loss-centered stimuli, generates a listening test, and maps mean listener scores back to packet positions. It supports controlled stimulus selection and optional reference and anchor material. | Human test, packet-aligned |
+| `HumanCalculator` | Prepares deterministic, matching loss-centered material for MUSHRA comparisons, with original-derived references and generated anchors. Collection and validated response finalization are explicit later operations; unrated excerpts are missing, not zero. | Human test, structured excerpt-level results |
 
 ### External requirements
 
 - `PEAQCalculator` and `WindowedPEAQCalculator` invoke the external GstPEAQ `peaq` executable and require its GStreamer plugin environment.
-- `HumanCalculator` relies on the listening-test workflow and its webMUSHRA/pyMUSHRA setup.
+- `HumanCalculator` preparation/export/import needs no webMUSHRA checkout, pyMUSHRA server, or participant database. A hosting application supplies browser presentation and response collection; see [Human listening tests](human-listening.md).
 - `PLCMOSCalculator` uses ONNX Runtime and the PLCMOS model files supplied in `dl_models/`.
 - `PESQCalculator` uses the installed `pesqc2` package.
 

@@ -65,8 +65,8 @@ class PLCTestbench(object):
         """
         self.data_manager.run_testbench()
 
-    def get_nodes_by_depth(self, root_node: Node) -> dict[int, list[str]]:
-        levels: dict[int, list[str]] = {}
+    def get_nodes_by_depth(self, root_node: Node) -> dict[int, list[Node]]:
+        levels: dict[int, list[Node]] = {}
         queue = deque([(root_node, 0)])
 
         while queue:

@@ -8,6 +8,7 @@ from .utils import progress_monitor
 class RunStatus(str, Enum):
     CREATED = "CREATED"
     RUNNNING = "RUNNNING"
+    AWAITING_INPUT = "AWAITING_INPUT"
     FAILED = "FAILED"
     COMPLETED = "COMPLETED"
 

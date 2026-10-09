@@ -4,12 +4,11 @@ from math import gcd
 from pathlib import Path
 
 import numpy as np
-import numpy.random as npr
 from pesqc2 import pesq
 from scipy.signal import resample_poly
 
 from .file_wrapper import AudioFile, DataFile, PEAQData, SimpleCalculatorData
-from .listening_tests import ListeningTest
+from .human_listening import HumanCalculatorData, prepare_condition
 from .perceptual_metric import PerceptualMetric
 from .plcmos import PLCMOSEstimator
 from .settings import (
@@ -30,7 +29,6 @@ from .settings import (
 from .utils import (
     dummy_progress_bar,
     extract_intorni,
-    force_single_loss_per_stimulus,
     is_loud_enough,
 )
 from .worker import Worker
@@ -634,50 +632,91 @@ class PerceptualCalculator(OutputAnalyser):
 
 
 class HumanCalculator(OutputAnalyser):
-    """Generate and run a human listening test for packet-loss events.
+    """Prepare loss-centered material for an asynchronous MUSHRA listening test.
+
+    This analyser compares audio quality on a 0–100 scale, where higher scores
+    mean better quality. It replaces the legacy SPLAT glitch-audibility workflow;
+    old SPLAT scores must not be interpreted as MUSHRA quality ratings.
+
+    [`run()`][plctestbench.output_analyser.HumanCalculator.run] returns a
+    persistent, **prepared** `HumanCalculatorData` condition bundle. It does not
+    start a server, wait for listeners, or read a local participant database.
+    Prepared human work leaves the standalone testbench in `AWAITING_INPUT`
+    after its other automated nodes finish.
+
+    The platform permits at most one HumanCalculator per run and requires
+    exactly one loss-simulator instance when it is present. Its single study
+    covers all selected tracks and PLC conditions. Automated-only platform runs
+    may still use multiple simulators. This is a host configuration constraint,
+    not a restriction on standalone bundle preparation.
+
+    Group bundles for the same analyser configuration and loss-simulator
+    instance using `plctestbench.human_listening.assemble_study(bundles, study_id)`.
+    The assembler checks that every PLC condition uses identical reference,
+    anchor, and excerpt bounds. `study.export(destination)` writes portable
+    YAML/WAV material. After collecting completed listener sessions separately,
+    `study.finalize(records)` validates responses and returns finalized bundles
+    for explicit persistence by the caller. Preparation/export/import require
+    neither a webMUSHRA checkout nor a pyMUSHRA server.
+
+    Each trial uses an original excerpt as its explicit/hidden reference and a
+    generated 3.5 kHz low-pass anchor. Mono/stereo clips are exported at 48 kHz,
+    with equal short boundary fades and no independent condition normalization.
+    Up to ten PLC conditions may be compared per trial. A contiguous loss burst
+    counts as one event. If fewer eligible excerpts exist than requested, all
+    eligible excerpts are used with a warning; zero eligible excerpts is an
+    error. Selection uses a local random generator without changing global RNG
+    state. Browser presentation and collection remain the host's responsibility;
+    these artifacts alone do not establish ITU or laboratory compliance.
+
+    Results retain participant, trial, condition, and repetition identity.
+    Unrated excerpt summaries are `None`, not zero. Excerpt quality ratings are
+    not packet-aligned measurements and must not be plotted as a continuous
+    packet-error array.
 
     Attributes:
-        fs (int): Audio sample rate in hertz.
-        packet_size (int): Number of audio samples in each packet.
-        stimulus_length (int): Stimulus duration in milliseconds.
-        single_loss (bool): Whether each stimulus contains only one loss.
-        stimuli_per_page (int): Number of stimuli shown on each page.
-        pages (int): Number of listening-test pages.
-        stimuli_number (int): Total number of stimuli in the test.
-        choose_seed (int): Seed used when selecting stimuli.
-        persistent (bool): Whether the listening-test result persists.
-        listening_test (ListeningTest): Listening test created by
-            [`run()`][plctestbench.output_analyser.HumanCalculator.run].
+        settings (HumanCalculatorSettings): Stimulus-selection configuration,
+            with sample rate and packet size inherited from parent nodes.
+        persistent (bool): Always `True`; prepared material can be cached and
+            reused independently of later study-scoped participant responses.
     """
 
     def __init__(self, settings: HumanCalculatorSettings) -> None:
-        """Initialize a human listening-test calculator.
+        """Initialize MUSHRA preparation using validated analyser settings.
+
+        Args:
+            settings: Human-calculator settings; parent-node inheritance supplies
+                `fs` and `packet_size` before execution.
 
         Other Parameters:
-            stimulus_length (int): Stimulus duration in milliseconds. Defaults
-                to ``3000``.
-            single_loss_per_stimulus (bool): Whether each stimulus may contain
-                only one loss event. Defaults to ``True``.
-            stimuli_per_page (int): Number of stimuli shown on each page.
-                Defaults to ``10``.
-            pages (int): Number of listening-test pages. Defaults to ``2``.
-            iterations (int): Number of test iterations. Defaults to ``1``.
-            choose_seed (int): Seed used to select stimuli. Defaults to ``1``.
-            reference (str | None): Optional reference-track path. Defaults to
-                ``None``.
-            anchor (str | None): Optional anchor-track path. Defaults to
-                ``None``.
+            test_type (str): Listening-test type. Currently only `"mushra"`.
+            stimulus_length (int): Excerpt duration in milliseconds. Defaults to
+                `3000`; supported range is `1000`–`12000`.
+            single_loss_per_stimulus (bool): Require exactly one complete loss
+                event within each excerpt. Defaults to `True`.
+            trials_per_track (int): Requested number of distinct eligible
+                excerpts per track. Defaults to `20`; minimum is `1`.
+            iterations (int): Repetitions of every selected excerpt. Defaults to
+                `1`; minimum is `1`.
+            choose_seed (int): Nonnegative deterministic selection seed.
+                Defaults to `1`.
+            loudness_threshold_db (float): Minimum excerpt RMS relative to the
+                whole original track, in dB. Defaults to `-10`; must be finite
+                and no greater than `0`.
+            pages (int | None): Deprecated legacy count alias, combined with
+                `stimuli_per_page`. The legacy default is `2` when only the
+                other alias is supplied.
+            stimuli_per_page (int | None): Deprecated legacy count alias. The
+                legacy default is `10` when only `pages` is supplied. Their
+                product maps to `trials_per_track`; conflicting values fail.
+            reference (str | None): Deprecated external reference path. Only
+                `None` is accepted; references are matching original excerpts.
+            anchor (str | None): Deprecated external anchor path. Only `None`
+                is accepted; each anchor is generated from its reference.
         """
         super().__init__(settings)
-        self.fs = self.settings.get("fs")
-        self.packet_size = self.settings.get("packet_size")
-        self.stimulus_length = self.settings.get("stimulus_length")
-        self.single_loss = self.settings.get("single_loss_per_stimulus")
-        self.stimuli_per_page = self.settings.get("stimuli_per_page")
-        self.pages = self.settings.get("pages")
-        self.stimuli_number = self.stimuli_per_page * self.pages
-        self.choose_seed = self.settings.get("choose_seed")
-        self.persistent = False
+        # Preparation artifacts are reusable; participant data is study-scoped.
+        self.persistent = True
 
     def run(
         self,
@@ -685,113 +724,39 @@ class HumanCalculator(OutputAnalyser):
         reconstructed_track_node: AudioFile,
         lost_samples_idxs_data: DataFile = None,
         id: str = "",
-    ):
-        """Run the listening test and collect its scores.
+    ) -> HumanCalculatorData:
+        """Prepare one PLC condition without collecting or fabricating scores.
+
+        Args:
+            original_track_node: Finite, nonempty original mono/stereo audio.
+            reconstructed_track_node: PLC audio with the same length, sample
+                rate, and channel layout as the original.
+            lost_samples_idxs_data: Required sample-loss indices. Integral
+                legacy float indices are accepted, sorted, and deduplicated.
+            id: Output-analysis node identifier used only for progress reporting.
 
         Returns:
-            (SimpleCalculatorData): Packet-aligned mean listening-test scores.
+            (HumanCalculatorData): A version-1 condition bundle in `prepared`
+                state, containing source sample bounds, matching reference/PLC/
+                anchor material, repetitions, and any selection warnings. Its
+                result summaries remain unobserved until explicit finalization.
+
+        Raises:
+            ValueError: Loss indices are missing, invalid, or out of bounds;
+                audio formats disagree or contain nonfinite values; inherited
+                sample rate/packet size is invalid; or no eligible complete
+                loss-centered excerpt is available.
         """
-
-        def transpose(matrix):
-            return [
-                [matrix[j][i] for j in range(len(matrix))]
-                for i in range(len(matrix[0]))
-            ]
-
-        self.listening_test = ListeningTest(self.settings)
-
-        if self.single_loss:
-            lost_samples_idxs = force_single_loss_per_stimulus(
-                lost_samples_idxs_data.get_data(),
-                self.fs,
-                self.stimulus_length / 2,
-                self.packet_size,
-            )
-        else:
-            lost_samples_idxs = lost_samples_idxs_data.get_data()
-        intorni_original = extract_intorni(
-            original_track_node,
-            lost_samples_idxs,
-            self.stimulus_length,
-            self.fs,
-            self.packet_size,
-            unique=True,
+        if lost_samples_idxs_data is None:
+            raise ValueError("HumanCalculator requires lost-sample indices")
+        # The output-node ID includes the analyser. PLC identity must not depend
+        # on the selected HumanCalculator instance, so use reconstructed path.
+        result = prepare_condition(
+            original_track_node, reconstructed_track_node,
+            lost_samples_idxs_data.get_data(), self.settings,
         )
-        intorni_reconstructed = extract_intorni(
-            reconstructed_track_node,
-            lost_samples_idxs,
-            self.stimulus_length,
-            self.fs,
-            self.packet_size,
-            unique=True,
-        )
-
-        intorni_original_loud = []
-        intorni_reconstructed_loud = []
-        for idx in range(len(intorni_original[1])):
-            if is_loud_enough(
-                intorni_original[1][idx], original_track_node.get_data(), -10
-            ):
-                intorni_original_loud.append(
-                    [intorno[idx] for intorno in intorni_original]
-                )
-                intorni_reconstructed_loud.append(
-                    [intorno[idx] for intorno in intorni_reconstructed]
-                )
-
-        intorni_original_loud = transpose(intorni_original_loud)
-        intorni_reconstructed_loud = transpose(intorni_reconstructed_loud)
-
-        if self.stimuli_number > len(intorni_original_loud[1]):
-            error_message = f"The number of stimuli requested ({self.stimuli_number}) is greater than the number of stimuli available ({len(intorni_original_loud)}). Increase the total length of available audio."
-            discarded_packets_close = (
-                len(lost_samples_idxs_data.get_data()) - len(lost_samples_idxs)
-            ) // self.packet_size
-            if discarded_packets_close > 0:
-                error_message += f" {discarded_packets_close} stimulus were discarded because too close to each other."
-            discarded_packet_loud = len(intorni_original[1]) - len(
-                intorni_original_loud[1]
-            )
-            if discarded_packet_loud > 0:
-                error_message += f" {discarded_packet_loud} stimulus were discarded because too quiet."
-            raise ValueError(error_message)
-
-        npr.seed(self.choose_seed)
-        stimuli_idxs = npr.choice(
-            range(len(intorni_original_loud[1])), self.stimuli_number, replace=False
-        )
-        stimuli_original = transpose(
-            [
-                [intorno[idx] for intorno in intorni_original_loud]
-                for idx in stimuli_idxs
-            ]
-        )
-        stimuli_reconstructed = transpose(
-            [
-                [intorno[idx] for intorno in intorni_reconstructed_loud]
-                for idx in stimuli_idxs
-            ]
-        )
-
-        self.listening_test.set_references(
-            list(zip(stimuli_original[0], stimuli_original[1])), original_track_node
-        )
-        self.listening_test.set_stimuli(
-            list(zip(stimuli_reconstructed[0], stimuli_reconstructed[1])),
-            original_track_node,
-        )
-        self.listening_test.set_indexes(stimuli_original[0])
-        self.listening_test.generate_config()
-        results = self.listening_test.get_results()
-
-        metric = np.zeros(len(original_track_node.get_data()) // self.packet_size)
-        for idx, mean, _ in self.progress_monitor(results, desc=f"{str(self)}|{id}"):
-            try:
-                metric[int(idx.split("-")[-1])] = mean
-            except (IndexError, TypeError, ValueError):
-                print(f"Skipping listening-test result with invalid index: {idx!r}")
-
-        return SimpleCalculatorData(metric)
+        dummy_progress_bar(self, desc=f"{str(self)}|{id}")
+        return result
 
 
 class PLCMOSCalculator(OutputAnalyser):

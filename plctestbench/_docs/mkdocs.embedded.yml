@@ -8,6 +8,7 @@ nav:
   - Introduction: index.md
   - Guides:
       - Models and metrics: guides/models-and-metrics.md
+      - Listening Study Hub: guides/study-hub.md
       - Crossfades: guides/crossfades-platform.md
       - Advanced PLC: guides/advanced-plc-platform.md
       - Custom PLC plugins: guides/custom-plugins.md

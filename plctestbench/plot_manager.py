@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from .file_wrapper import SimpleCalculatorData
+from .human_listening import HumanCalculatorData
 from .node import (
     LostSamplesMaskNode,
     Node,
@@ -14,7 +15,6 @@ from .node import (
     ReconstructedTrackNode,
 )
 from .output_analyser import (
-    HumanCalculator,
     MAECalculator,
     MSECalculator,
     PEAQCalculator,
@@ -113,6 +113,21 @@ class PlotManager(object):
         n_channels = original_track.get_channels()
         original_track_length = (len(original_track.get_data())) / samplerate
         data = node.get_file().get_data()
+        if isinstance(data, HumanCalculatorData):
+            fig, ax = plt.subplots(figsize=self.figsize, dpi=self.dpi)
+            summaries = data.to_dict()["excerpts"]
+            rated = [summary for summary in summaries if summary["mean"] is not None]
+            centers = [
+                (summary["excerpt"]["start_sample"] + summary["excerpt"]["end_sample"]) / (2 * samplerate)
+                for summary in rated
+            ]
+            ax.scatter(centers, [summary["mean"] for summary in rated])
+            ax.set(xlabel="Excerpt center [s]", ylabel="MUSHRA quality (higher is better)", ylim=(0, 100))
+            ax.set_title("Awaiting listening responses" if data.status == "prepared" else "Human listening quality")
+            if to_file:
+                fig.savefig(node.get_path(), bbox_inches="tight")
+            plt.close(fig)
+            return
         fig = plt.figure(figsize=self.figsize, dpi=self.dpi)
         if isinstance(data, SimpleCalculatorData):
             worker_class = node.worker.__class__
@@ -120,9 +135,7 @@ class PlotManager(object):
                 name = "Mean Square Error"
             elif worker_class == MAECalculator:
                 name = "Mean Absolute Error"
-            elif (
-                worker_class == PerceptualCalculator or worker_class == HumanCalculator
-            ):
+            elif worker_class == PerceptualCalculator:
                 name = "Perceived Error"
             else:
                 raise NotImplementedError(
@@ -162,8 +175,11 @@ class PlotManager(object):
             )
             print(file_content)
             if to_file:
-                with open(node.get_path() + ".txt", "w", encoding="utf-8") as file:
-                    file.write(file_content)
+                try:
+                    with open(node.get_path() + ".txt", "w", encoding="utf-8") as file:
+                        file.write(file_content)
+                except OSError as error:
+                    raise OSError(f"Could not write PEAQ plot summary: {node.get_path()}") from error
 
         plt.close(fig)
 

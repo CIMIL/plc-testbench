@@ -50,7 +50,9 @@ def _validate_profile(profile: str) -> DocumentationProfile:
 def _prepare_embedded_content(source_root: Path, destination: Path) -> Path:
     content_directory = destination / "content"
     shutil.copytree(source_root / "content", content_directory)
-    shutil.copy2(source_root / "embedded" / "index.md", content_directory / "index.md")
+    # Embedded-only guides and overrides belong in this overlay, not in the
+    # standalone content tree. Merge it recursively before building the profile.
+    shutil.copytree(source_root / "embedded", content_directory, dirs_exist_ok=True)
     getting_started_directory = content_directory / "getting-started"
     if not getting_started_directory.is_dir():
         raise RuntimeError(
@@ -74,8 +76,8 @@ def build_docs(
     """Build a static documentation profile into ``output_dir``.
 
     ``standalone`` contains the package introduction, getting-started pages, and
-    repository links. ``embedded`` substitutes its own introduction and excludes
-    standalone-only content and repository actions.
+    repository links. ``embedded`` overlays its introduction and application-only
+    guides, and excludes standalone-only content and repository actions.
 
     The builder parses package source rather than importing application modules, so
     documentation generation does not initialize database or native integrations.

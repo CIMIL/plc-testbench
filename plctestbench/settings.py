@@ -1150,27 +1150,67 @@ class PerceptualCalculatorSettings(Settings):
 
 
 class HumanCalculatorSettings(Settings):
+    """MUSHRA preparation settings; collection is an explicit later operation.
+
+    Legacy ``pages``/``stimuli_per_page`` map to their product. Their defaults
+    remain 2 and 10 when only one is supplied. External reference/anchor paths
+    cannot be migrated to comparable MUSHRA excerpts and are rejected.
+    """
 
     def __init__(
         self,
         stimulus_length: int = 3000,
         single_loss_per_stimulus: bool = True,
-        stimuli_per_page: int = 10,
-        pages: int = 2,
+        stimuli_per_page: int | None = None,
+        pages: int | None = None,
         iterations: int = 1,
         choose_seed: int = 1,
-        reference: str = None,
-        anchor: str = None,
+        reference: str | None = None,
+        anchor: str | None = None,
+        *,
+        test_type: str = "mushra",
+        trials_per_track: int | None = None,
+        loudness_threshold_db: float = -10,
     ) -> None:
         super().__init__()
-        self.settings["stimulus_length"] = stimulus_length
-        self.settings["single_loss_per_stimulus"] = single_loss_per_stimulus
-        self.settings["stimuli_per_page"] = stimuli_per_page
-        self.settings["pages"] = pages
-        self.settings["iterations"] = iterations
-        self.settings["choose_seed"] = choose_seed
-        self.settings["reference"] = reference
-        self.settings["anchor"] = anchor
+        if reference is not None or anchor is not None:
+            raise ValueError("External reference/anchor paths are unsupported: MUSHRA uses matching original excerpts and generated anchors")
+        if test_type != "mushra":
+            raise ValueError("Only MUSHRA is supported; legacy SPLAT scores cannot be imported as quality ratings")
+        if pages is not None or stimuli_per_page is not None:
+            for name, value in (("pages", pages), ("stimuli_per_page", stimuli_per_page)):
+                if value is not None and (isinstance(value, bool) or not isinstance(value, int) or value < 1):
+                    raise ValueError(f"{name} must be a positive integer")
+            legacy_count = (2 if pages is None else pages) * (10 if stimuli_per_page is None else stimuli_per_page)
+            if trials_per_track is not None and trials_per_track != legacy_count:
+                raise ValueError("trials_per_track conflicts with legacy pages × stimuli_per_page")
+            trials_per_track = legacy_count
+        if trials_per_track is None:
+            trials_per_track = 20
+        for name, value, minimum in (
+            ("stimulus_length", stimulus_length, 1000),
+            ("trials_per_track", trials_per_track, 1),
+            ("iterations", iterations, 1),
+            ("choose_seed", choose_seed, 0),
+        ):
+            if isinstance(value, bool) or not isinstance(value, int) or value < minimum:
+                raise ValueError(f"{name} must be an integer >= {minimum}")
+        if stimulus_length > 12000:
+            raise ValueError("stimulus_length must be <= 12000 ms")
+        if not isinstance(single_loss_per_stimulus, bool):
+            raise ValueError("single_loss_per_stimulus must be a boolean")
+        from math import isfinite
+        if isinstance(loudness_threshold_db, bool) or not isinstance(loudness_threshold_db, (int, float)) or not isfinite(loudness_threshold_db) or loudness_threshold_db > 0:
+            raise ValueError("loudness_threshold_db must be finite and <= 0")
+        self.settings.update({
+            "test_type": test_type,
+            "stimulus_length": stimulus_length,
+            "single_loss_per_stimulus": single_loss_per_stimulus,
+            "trials_per_track": trials_per_track,
+            "iterations": iterations,
+            "choose_seed": choose_seed,
+            "loudness_threshold_db": loudness_threshold_db,
+        })
 
 
 class PlotsSettings(Settings):
