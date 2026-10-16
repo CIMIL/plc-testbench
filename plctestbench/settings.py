@@ -1152,6 +1152,10 @@ class PerceptualCalculatorSettings(Settings):
 class HumanCalculatorSettings(Settings):
     """MUSHRA preparation settings; collection is an explicit later operation.
 
+    Full tracks are the default stimulus. Set ``use_full_track=False`` to apply
+    the loss-centered excerpt options; ``iterations`` applies in either mode.
+    Excerpt-option values remain validated and stored even in full-track mode.
+
     Legacy ``pages``/``stimuli_per_page`` map to their product. Their defaults
     remain 2 and 10 when only one is supplied. External reference/anchor paths
     cannot be migrated to comparable MUSHRA excerpts and are rejected.
@@ -1160,7 +1164,7 @@ class HumanCalculatorSettings(Settings):
     def __init__(
         self,
         stimulus_length: int = 3000,
-        single_loss_per_stimulus: bool = True,
+        single_loss_per_stimulus: bool = False,
         stimuli_per_page: int | None = None,
         pages: int | None = None,
         iterations: int = 1,
@@ -1171,6 +1175,7 @@ class HumanCalculatorSettings(Settings):
         test_type: str = "mushra",
         trials_per_track: int | None = None,
         loudness_threshold_db: float = -10,
+        use_full_track: bool = True,
     ) -> None:
         super().__init__()
         if reference is not None or anchor is not None:
@@ -1197,13 +1202,15 @@ class HumanCalculatorSettings(Settings):
                 raise ValueError(f"{name} must be an integer >= {minimum}")
         if stimulus_length > 12000:
             raise ValueError("stimulus_length must be <= 12000 ms")
-        if not isinstance(single_loss_per_stimulus, bool):
-            raise ValueError("single_loss_per_stimulus must be a boolean")
+        for name, value in (("single_loss_per_stimulus", single_loss_per_stimulus), ("use_full_track", use_full_track)):
+            if not isinstance(value, bool):
+                raise ValueError(f"{name} must be a boolean")
         from math import isfinite
         if isinstance(loudness_threshold_db, bool) or not isinstance(loudness_threshold_db, (int, float)) or not isfinite(loudness_threshold_db) or loudness_threshold_db > 0:
             raise ValueError("loudness_threshold_db must be finite and <= 0")
         self.settings.update({
             "test_type": test_type,
+            "use_full_track": use_full_track,
             "stimulus_length": stimulus_length,
             "single_loss_per_stimulus": single_loss_per_stimulus,
             "trials_per_track": trials_per_track,

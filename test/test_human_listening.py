@@ -31,7 +31,9 @@ def material(tmp_path, *, channels=1, sample_rate=8000):
 
 
 def settings(**kwargs):
-    return attach(HumanCalculatorSettings(**kwargs), fs=8000, packet_size=80)
+    # Existing fixtures explicitly exercise loss-centered excerpt mode.
+    options = {"use_full_track": False, "single_loss_per_stimulus": True, **kwargs}
+    return attach(HumanCalculatorSettings(**options), fs=8000, packet_size=80)
 
 
 def bundle(tmp_path, **kwargs):
@@ -76,6 +78,77 @@ def test_equal_material_shapes_resampling_and_pickle_hash(tmp_path, channels):
     assert result.to_dict() == cast(HumanCalculatorData, reloaded.get_data()).to_dict()
 
 
+def test_full_track_is_default_and_single_loss_is_not():
+    defaults = HumanCalculatorSettings()
+    assert defaults.get("use_full_track") is True
+    assert defaults.get("single_loss_per_stimulus") is False
+
+
+def test_excerpt_mode_allows_multiple_losses_by_default(tmp_path):
+    original, restored, _ = material(tmp_path)
+    config = attach(HumanCalculatorSettings(use_full_track=False), fs=8000, packet_size=80)
+    result = prepare_condition(original, restored, [24000, 24100], config)
+    assert result.excerpts
+    assert all(excerpt.definition.end_sample - excerpt.definition.start_sample == 24000 for excerpt in result.excerpts)
+
+
+@pytest.mark.parametrize("channels", [1, 2])
+@pytest.mark.parametrize("indices", [[], [0, 1, 100, 101, 95999]])
+def test_full_track_bypasses_excerpt_selection_and_preserves_audio(tmp_path, channels, indices):
+    from plctestbench.human_listening import _fade_boundaries, _listening_audio
+
+    original, restored, _ = material(tmp_path, channels=channels)
+    before = original.get_data().copy(), restored.get_data().copy()
+    # Even a 12-second excerpt, strict single-loss constraint and 0 dB
+    # eligibility threshold must not affect whole-track preparation.
+    config = attach(HumanCalculatorSettings(
+        stimulus_length=12000, single_loss_per_stimulus=True,
+        loudness_threshold_db=0, trials_per_track=99, iterations=2,
+    ), fs=8000, packet_size=80)
+    result = prepare_condition(original, restored, indices, config)
+    assert len(result.excerpts) == 1
+    assert result.warnings == ()
+    excerpt = result.excerpts[0]
+    assert (excerpt.definition.start_sample, excerpt.definition.end_sample) == (0, 96000)
+    assert (excerpt.definition.loss_start_sample, excerpt.definition.loss_end_sample) == (
+        (0, 96000) if indices else (0, 0)
+    )
+    assert len(excerpt.reference) == 576000
+    assert excerpt.reference.shape == excerpt.reconstructed.shape == excerpt.anchor.shape
+    np.testing.assert_array_equal(excerpt.reference, _fade_boundaries(_listening_audio(before[0], 8000)))
+    np.testing.assert_array_equal(excerpt.reconstructed, _fade_boundaries(_listening_audio(before[1], 8000)))
+    np.testing.assert_array_equal(original.get_data(), before[0])
+    np.testing.assert_array_equal(restored.get_data(), before[1])
+    repeated = prepare_condition(original, restored, indices, config)
+    assert hash(result) == hash(repeated)
+    study = assemble_study([result, replace(result, condition_id="condition-b")], "full-track")
+    assert len(study.definition.trials) == 2
+    assert {trial.repetition for trial in study.definition.trials} == {0, 1}
+
+
+def test_full_track_accepts_short_loss_free_audio_and_exports_all_samples(tmp_path):
+    original, restored, _ = material(tmp_path)
+    original.data = original.get_data()[:4000]
+    restored.data = restored.get_data()[:4000]
+    config = attach(HumanCalculatorSettings(), fs=8000, packet_size=80)
+    result = prepare_condition(original, restored, [], config)
+    study = assemble_study([result], "short-track")
+    path = study.export(tmp_path / "full-track-export")
+    exported = YAML(typ="safe").load(path)
+    trial = exported["pages"][-1]
+    for relative in (trial["reference"], *trial["stimuli"].values()):
+        audio, sample_rate = sf.read(path.parent / relative)
+        assert sample_rate == 48000
+        assert len(audio) == 24000
+
+
+def test_old_persisted_settings_keep_excerpt_mode(tmp_path):
+    original, restored, indices = material(tmp_path)
+    config = settings()
+    del config.get_all()["use_full_track"]
+    assert len(prepare_condition(original, restored, indices, config).excerpts) == 2
+
+
 def test_loss_events_normalize_legacy_floats_and_keep_next_burst_start():
     assert loss_events([11.0, 10.0, 11.0, 20.0, 21.0], 100) == [(10, 12), (20, 22)]
     assert loss_events([], 100) == []
@@ -104,6 +177,7 @@ def test_multiple_losses_allowed_when_explicit(tmp_path):
     {"stimulus_length": 999}, {"stimulus_length": 12001},
     {"trials_per_track": 0}, {"iterations": 0}, {"choose_seed": -1},
     {"choose_seed": True}, {"single_loss_per_stimulus": "true"},
+    {"use_full_track": "true"}, {"use_full_track": 1},
     {"test_type": "splat"}, {"reference": "external.wav"},
     {"anchor": "anchor.wav"}, {"loudness_threshold_db": float("nan")},
     {"loudness_threshold_db": 1}, {"pages": 0},
@@ -129,10 +203,14 @@ def test_assembly_export_and_finalize_preserve_zero_and_repetitions(tmp_path):
     config_path = study.export(tmp_path / "export")
     config = YAML(typ="safe").load(config_path)
     assert config["testId"] == "study-1"
-    assert all(page["type"] == "mushra" for page in config["pages"])
+    volume, *trials = config["pages"]
+    assert volume["type"] == "volume"
+    assert volume["defaultVolume"] == 0.8
+    assert volume["stimulus"] == trials[0]["reference"]
+    assert all(page["type"] == "mushra" for page in trials)
     assert "remoteService" not in config  # adapter must supply collection
-    assert not config["pages"][0]["createAnchor35"]
-    for page in config["pages"]:
+    assert not trials[0]["createAnchor35"]
+    for page in trials:
         for path in (page["reference"], *page["stimuli"].values()):
             audio, rate = sf.read(config_path.parent / path)
             assert rate == 48000 and len(audio) == 144000

@@ -43,9 +43,21 @@ prepare or export material.
 
 ### Selection and audio
 
-Defaults are 3-second excerpts, 20 distinct trials per track, one repetition,
-selection seed 1, and a −10 dB reference-relative RMS threshold. Each contiguous
-loss burst counts as one event. Selection requires complete in-bounds clips;
+**Use full track** (`use_full_track=True`) is enabled by default. Each input
+track is one stimulus, comparing its complete original and PLC versions, with
+one trial per track per repetition. This suits pre-processed listening material
+and overall track scores. Full-track mode bypasses `stimulus_length`,
+`single_loss_per_stimulus`, `trials_per_track`, `choose_seed` and
+`loudness_threshold_db`; the configurator hides those controls without discarding
+their values. Tracks shorter than one second and tracks without loss events are
+accepted. Source bounds cover the entire track; loss bounds describe the envelope
+of all loss events, or the empty interval `[0, 0)` for loss-free material.
+Repetitions (`iterations`, default 1) and shared audio processing still apply.
+
+Disable **Use full track** for loss-centered excerpt selection. Excerpt defaults
+are 3 seconds, up to 20 distinct trials per track, selection seed 1, and a −10 dB
+reference-relative RMS threshold. `single_loss_per_stimulus` defaults to `False`.
+Each contiguous loss burst counts as one event. Selection requires complete in-bounds clips;
 with `single_loss_per_stimulus=True`, no other event may intersect the window.
 If fewer excerpts qualify, the bundle contains all eligible excerpts and a
 warning. A track with no eligible excerpt fails rather than disappearing from

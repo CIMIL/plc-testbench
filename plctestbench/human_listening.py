@@ -52,7 +52,7 @@ class ExcerptDefinition:
     start_sample: int
     end_sample: int  # exclusive; source sample rate
     loss_start_sample: int
-    loss_end_sample: int  # exclusive
+    loss_end_sample: int  # exclusive; full tracks use the loss envelope, or [0, 0) if loss-free
     packet_size: int
     source_sample_rate: int
 
@@ -269,14 +269,25 @@ def prepare_condition(original_file, reconstructed_file, indices, settings, cond
     condition_id = condition_id or "condition-" + _digest(Path(reconstructed_file.get_path()).stem)[:24]
     if condition_id in {"reference", "anchor35"}:
         raise ValueError("PLC condition ID is reserved for a reference or anchor")
-    excerpts, warnings = select_excerpts(
-        original, indices, track_id=track_id, mask_id=mask_id,
-        sample_rate=sample_rate, packet_size=packet_size,
-        stimulus_length=settings.get("stimulus_length"),
-        trials_per_track=settings.get("trials_per_track"),
-        single_loss=settings.get("single_loss_per_stimulus"),
-        seed=settings.get("choose_seed"), threshold_db=settings.get("loudness_threshold_db"),
-    )
+    # Older persisted settings without this flag retain their excerpt behavior.
+    if settings.get_all().get("use_full_track", False):
+        start, end = 0, len(original)
+        excerpt_id = "excerpt-" + _digest([track_id, mask_id, start, end])[:24]
+        excerpts = (ExcerptDefinition(
+            excerpt_id, track_id, mask_id, start, end,
+            events[0][0] if events else 0, events[-1][1] if events else 0,
+            packet_size, sample_rate,
+        ),)
+        warnings = ()
+    else:
+        excerpts, warnings = select_excerpts(
+            original, indices, track_id=track_id, mask_id=mask_id,
+            sample_rate=sample_rate, packet_size=packet_size,
+            stimulus_length=settings.get("stimulus_length"),
+            trials_per_track=settings.get("trials_per_track"),
+            single_loss=settings.get("single_loss_per_stimulus"),
+            seed=settings.get("choose_seed"), threshold_db=settings.get("loudness_threshold_db"),
+        )
     material = []
     for excerpt in excerpts:
         reference = _listening_audio(original[excerpt.start_sample:excerpt.end_sample], sample_rate)
@@ -330,6 +341,15 @@ class ListeningStudy:
                 "createAnchor35": False, "createAnchor70": False,
                 "showWaveform": False, "enableLooping": True,
                 "randomize": True, "switchBack": False,
+            })
+        if pages:
+            pages.insert(0, {
+                "type": "volume", "id": "volume", "name": "Adjust your listening volume",
+                "content": "Put on your headphones and play the reference excerpt. Starting at a low device volume, "
+                "adjust the playback slider and your device volume until the audio is clear and comfortable, "
+                "never uncomfortably loud. When ready, continue to the trials. Keep the same headphones, "
+                "playback volume, and device volume for the rest of the study so your ratings are comparable.",
+                "stimulus": pages[0]["reference"], "defaultVolume": 0.8,
             })
         config = {
             "testname": "MUSHRA listening test", "testId": self.definition.id,

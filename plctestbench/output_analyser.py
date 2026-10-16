@@ -663,7 +663,9 @@ class HumanCalculator(OutputAnalyser):
     generated 3.5 kHz low-pass anchor. Mono/stereo clips are exported at 48 kHz,
     with equal short boundary fades and no independent condition normalization.
     Up to ten PLC conditions may be compared per trial. A contiguous loss burst
-    counts as one event. If fewer eligible excerpts exist than requested, all
+    counts as one event. By default, each full track is one stimulus per
+    repetition, bypassing excerpt selection. With `use_full_track=False`,
+    if fewer eligible excerpts exist than requested, all
     eligible excerpts are used with a warning; zero eligible excerpts is an
     error. Selection uses a local random generator without changing global RNG
     state. Browser presentation and collection remain the host's responsibility;
@@ -690,10 +692,14 @@ class HumanCalculator(OutputAnalyser):
 
         Other Parameters:
             test_type (str): Listening-test type. Currently only `"mushra"`.
-            stimulus_length (int): Excerpt duration in milliseconds. Defaults to
-                `3000`; supported range is `1000`–`12000`.
+            use_full_track (bool): Use each entire track as one stimulus.
+                Defaults to `True`; bypasses stimulus length, single-loss
+                selection, trials per track, selection seed and loudness
+                filtering. Repetitions and common audio processing still apply.
+            stimulus_length (int): Excerpt duration in milliseconds when full
+                tracks are disabled. Defaults to `3000`; range `1000`–`12000`.
             single_loss_per_stimulus (bool): Require exactly one complete loss
-                event within each excerpt. Defaults to `True`.
+                event within each excerpt. Defaults to `False`.
             trials_per_track (int): Requested number of distinct eligible
                 excerpts per track. Defaults to `20`; minimum is `1`.
             iterations (int): Repetitions of every selected excerpt. Defaults to
